@@ -1,0 +1,2 @@
+[console_scripts]
+agent-computer = agent_computer.cli:main

@@ -1,0 +1,339 @@
+Metadata-Version: 2.4
+Name: agent-computer
+Version: 0.1.0
+Summary: Windows desktop control, capture, and GUI understanding toolkit for AI agents.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: google-genai>=1.8.0
+Requires-Dist: mss>=10.0.0
+Requires-Dist: Pillow>=10.4.0
+Requires-Dist: pydantic>=2.9.0
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: pyautogui>=0.9.54
+Requires-Dist: pywin32>=308
+
+# Agent Computer
+
+一个给 Codex 直接调用的 Windows 桌面原子工具集。
+
+它不是一个固定流程，而是一组可以自由组合的能力：
+
+- 轻量预览截图
+- 绝对坐标网格截图
+- 自定义 prompt 的 Gemini 定位
+- URL 直达导航
+- 点击 / 双击 / 滚动 / 键盘输入 / 热键
+- 剪贴板粘贴
+- 截图后再次观察屏幕
+- 自动拼接坐标规则到 Gemini prompt
+- 自动生成截图 sidecar 元数据
+
+## 官方参考
+
+- Gemini quickstart: https://ai.google.dev/gemini-api/docs/quickstart
+- Gemini 3 guide: https://ai.google.dev/gemini-api/docs/models/gemini/3
+- Image understanding: https://ai.google.dev/gemini-api/docs/image-understanding
+
+## 1. 创建 conda 环境
+
+```powershell
+cd <project-root>
+conda env create -p .\.conda -f environment.yml
+conda activate .\.conda
+pip install -e .
+```
+
+## 2. 配置 API Key
+
+```powershell
+copy .env.example .env
+```
+
+然后把 `.env` 里的 `GEMINI_API_KEY` 改成你自己的 key。
+
+也可以直接用环境变量：
+
+```powershell
+setx GEMINI_API_KEY "your_api_key_here"
+```
+
+可选超时配置，单位是毫秒：
+
+```powershell
+setx GEMINI_TIMEOUT_MS "180000"
+```
+
+可选重试次数：
+
+```powershell
+setx GEMINI_RETRIES "3"
+```
+
+## 3. 坐标规则
+
+用于点击联动时，项目现在遵循这条硬规则：
+
+1. 截图优先使用整屏
+2. 坐标原点永远是整张屏幕左上角 `(0,0)`
+3. 网格图使用四边标尺带，不再把小字直接压在内容区里
+4. 红色竖线标签是该线的 `x`
+5. 红色横线标签是该线的 `y`
+6. 点击阶段直接使用这套整屏绝对坐标，不再做额外换算
+
+`click-element` 现在也只接受整屏 OCR 结果。
+
+另外还有一条重要规则：
+
+- 无论使用 `ocr` 还是 `locate`，程序都会自动把坐标系规则拼接到发给 Gemini 的最终 prompt 里。
+- Codex 只需要提供“要找什么”的任务描述，坐标规则不是由 Codex 手写。
+
+## 4. 原子工具
+
+### 4.0 页面进入策略
+
+如果目标是“进入某个已知页面”，优先级应该是：
+
+1. 能拿到可靠 URL：优先直接打开 URL
+2. 拿不到 URL，但能构造稳定 URL：优先直接构造并打开
+3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `capture-grid -> locate -> click-element`
+
+也就是说：
+
+- **URL 优先**
+- **点击兜底**
+
+这是因为 URL 导航通常：
+
+- 更快
+- 更稳定
+- token 更省
+- 更不依赖视觉定位
+- 更不容易被页面布局变化影响
+
+### 4.1 URL 直达导航
+
+如果当前活动窗口已经是浏览器，推荐直接用：
+
+```powershell
+agent-computer open-url --url "https://www.zhipin.com/"
+agent-computer open-url --url "https://www.zhipin.com/web/geek/jobs?city=101210100&query=agent%E5%BC%80%E5%8F%91" --restore-clipboard
+```
+
+这个命令的行为是：
+
+- 发送 `Ctrl+L`
+- 把 URL 放进剪贴板并粘贴
+- 发送 `Enter`
+
+### 4.2 预览截图
+
+给 Codex 自己看屏幕用。默认整屏、无网格、压缩 JPEG。
+
+```powershell
+agent-computer capture-preview
+agent-computer capture-preview --output .\artifacts\preview.jpg
+```
+
+这个命令会同时生成一个 sidecar 元数据文件，例如：
+
+```text
+preview.jpg.meta.json
+```
+
+### 4.3 网格截图
+
+给 Gemini 做精确坐标定位用。默认整屏、带绝对坐标网格、高质量 JPEG。
+
+当前网格的绘制方式是：
+
+- 四边标尺带
+- 大号等宽数字
+- 标签只画在外围，不遮挡屏幕内容
+- 返回坐标仍然是屏幕绝对坐标，不是标尺带的图片像素坐标
+
+```powershell
+agent-computer capture-grid
+agent-computer capture-grid --grid-size 50 --jpeg-quality 90 --output .\artifacts\grid.jpg
+```
+
+这个命令同样会自动生成 sidecar 元数据，例如：
+
+```text
+grid.jpg.meta.json
+```
+
+### 4.4 自定义 Gemini 定位
+
+如果你已经有网格图，Codex 可以把自定义目标描述发给 Gemini：
+
+```powershell
+agent-computer locate --image .\artifacts\grid.jpg --target-description "Google Chrome taskbar icon"
+```
+
+程序会自动拼接：
+
+- 图片尺寸
+- 左上角起点 `(0,0)`
+- 右下角终点 `(width-1,height-1)`
+- 标尺带厚度
+- 内容区在图片中的起点和范围
+- 是否整屏
+- 是否有网格
+- 网格间隔
+- 红色竖线 / 横线标签规则
+
+如果你想检查最终真正发给 Gemini 的 prompt：
+
+```powershell
+agent-computer locate --image .\artifacts\grid.jpg --target-description "Google Chrome taskbar icon" --prompt-output .\artifacts\locate_prompt.txt
+```
+
+也可以完全自定义 prompt：
+
+```powershell
+agent-computer locate --image .\artifacts\grid.jpg --prompt-file .\my_prompt.txt
+agent-computer locate --image .\artifacts\grid.jpg --prompt "Find the best click point for the submit button"
+```
+
+### 4.5 通用截图
+
+仍然保留通用截图命令，适合调试：
+
+```powershell
+agent-computer capture --target primary-screen --format png
+agent-computer capture --target active-window --format jpeg --jpeg-quality 70
+agent-computer capture --window-title "Windows PowerShell" --grid
+```
+
+### 4.6 通用 OCR
+
+如果你只是想拿一张图做结构化界面理解，也可以继续用 `ocr`：
+
+```powershell
+agent-computer ocr --image .\artifacts\capture.png
+agent-computer ocr --image .\artifacts\capture.png --prompt-file .\my_prompt.txt
+agent-computer ocr --image .\artifacts\capture.png --prompt-output .\artifacts\ocr_prompt.txt
+```
+
+### 4.7 便捷组合
+
+`capture-ocr` 仍然存在，但现在只是便捷组合，不是主推荐路径：
+
+```powershell
+agent-computer capture-ocr --target primary-screen --grid --json-output .\artifacts\last_ocr.json
+```
+
+## 5. 桌面动作命令
+
+列出窗口：
+
+```powershell
+agent-computer windows
+```
+
+聚焦窗口：
+
+```powershell
+agent-computer focus --title "Windows PowerShell"
+```
+
+按坐标点击：
+
+```powershell
+agent-computer click --x 500 --y 920
+agent-computer click --x 500 --y 920 --double
+```
+
+直接点击 OCR 结果里的某个元素：
+
+```powershell
+agent-computer click-element --json-file .\artifacts\last_ocr.json --index 0
+```
+
+滚轮、输入、粘贴、URL 导航、按键、组合键：
+
+```powershell
+agent-computer scroll --amount -500
+agent-computer type --text "hello world"
+agent-computer paste --text "agent开发"
+agent-computer paste --text "agent开发" --restore-clipboard
+agent-computer open-url --url "https://www.zhipin.com/"
+agent-computer press --key enter
+agent-computer hotkey ctrl shift s
+```
+
+说明：
+
+- `type` 适合 ASCII、快捷测试
+- `paste` 更适合中文、长文本、复杂内容
+- `open-url` 适合已知目标页面
+- `paste` 的行为是：先把指定文本放进 Windows 剪贴板，再发送 `Ctrl+V`
+- `open-url` 的行为是：`Ctrl+L -> paste URL -> Enter`
+
+## 6. 推荐给 Codex 的使用方式
+
+推荐这样组合，而不是依赖一个黑盒流程：
+
+1. 如果目标页面 URL 已知，先用 `open-url`  
+   只有 URL 不可得时才走视觉定位点击
+2. `capture-preview`  
+   让 Codex 低成本看当前屏幕，判断下一步要做什么
+3. `capture-grid`  
+   当需要精确坐标时，再生成高质量绝对坐标网格图
+4. `locate`  
+   用 Codex 自定义的目标描述或 prompt 调 Gemini，拿坐标
+5. `click / scroll / type / paste / hotkey / open-url`
+6. 再次 `capture-preview`
+
+更具体地说，Codex 的使用方式应该是：
+
+1. 如果已知页面 URL，先用 `open-url` 直接进入  
+   例如搜索结果、岗位页、已知查询参数页
+2. 用 `capture-preview` 获取压缩预览图  
+   Codex 自己看图，决定下一步应该点什么
+3. 用 `capture-grid` 获取高质量整屏网格图  
+   用于 Gemini 坐标定位
+4. 用 `locate --target-description "..."` 或 `locate --prompt ...`  
+   让 Gemini 只返回目标坐标
+5. 用 `click`、`click-element`、`paste`、`open-url` 等原子动作执行业务步骤
+6. 再次 `capture-preview`  
+   让 Codex 继续判断下一步
+
+## 7. 便捷启动
+
+项目根目录自带一个包装脚本：
+
+```powershell
+.\run.ps1 open-url --url "https://www.zhipin.com/"
+.\run.ps1 capture-preview
+.\run.ps1 capture-grid --grid-size 50
+.\run.ps1 locate --image .\artifacts\grid.jpg --target-description "Google Chrome taskbar icon"
+```
+
+这样不用每次手写环境路径或入口命令。
+
+## 返回结果
+
+Gemini 定位/OCR 命令会尽量返回结构化 JSON，包含：
+
+- `summary`
+- `screen_text`
+- `elements`
+- `next_actions`
+
+如果模型没返回合法 JSON，程序会保留原始文本，方便调试。
+
+`capture-ocr` 落盘后的 JSON 外层还会额外带上：
+
+- `model`
+- `image_path`
+- `capture`
+- `parsed_json.elements[].absolute_bbox`
+- `parsed_json.elements[].click_point`
+
+`ocr` / `locate` 的结果还会额外带上：
+
+- `image_width`
+- `image_height`
+- `image_metadata`
+- `effective_prompt`

@@ -1,0 +1,9 @@
+.env
+.conda/
+__pycache__/
+*.pyc
+artifacts/*.png
+artifacts/*.jpg
+artifacts/*.jpeg
+artifacts/*.json
+artifacts/*.txt

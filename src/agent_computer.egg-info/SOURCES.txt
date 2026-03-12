@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/agent_computer/__init__.py
+src/agent_computer/actions.py
+src/agent_computer/capture.py
+src/agent_computer/cli.py
+src/agent_computer/gemini_client.py
+src/agent_computer/prompts.py
+src/agent_computer/schemas.py
+src/agent_computer/windowing.py
+src/agent_computer.egg-info/PKG-INFO
+src/agent_computer.egg-info/SOURCES.txt
+src/agent_computer.egg-info/dependency_links.txt
+src/agent_computer.egg-info/entry_points.txt
+src/agent_computer.egg-info/requires.txt
+src/agent_computer.egg-info/top_level.txt
