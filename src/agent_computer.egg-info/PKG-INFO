@@ -4,13 +4,16 @@ Version: 0.1.0
 Summary: Windows desktop control, capture, and GUI understanding toolkit for AI agents.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
 Requires-Dist: google-genai>=1.8.0
+Requires-Dist: httpx>=0.28.1
 Requires-Dist: mss>=10.0.0
 Requires-Dist: Pillow>=10.4.0
 Requires-Dist: pydantic>=2.9.0
 Requires-Dist: python-dotenv>=1.0.1
 Requires-Dist: pyautogui>=0.9.54
 Requires-Dist: pywin32>=308
+Requires-Dist: uvicorn>=0.32.0
 
 # Agent Computer
 

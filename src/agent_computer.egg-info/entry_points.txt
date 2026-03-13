@@ -1,2 +1,3 @@
 [console_scripts]
 agent-computer = agent_computer.cli:main
+agent-computer-daemon = agent_computer.daemon:main

@@ -18,6 +18,7 @@ RULER_BACKGROUND = (18, 20, 24)
 RULER_TEXT_COLOR = (250, 250, 250)
 RULER_TICK_COLOR = (255, 96, 96)
 GRID_LINE_COLOR = (255, 64, 64)
+MAJOR_GRID_LINE_COLOR = (255, 96, 96)
 CONTENT_BORDER_COLOR = (255, 96, 96)
 LABEL_FONT_SIZE = 26
 
@@ -36,6 +37,7 @@ class CaptureResult:
     bounds: tuple[int, int, int, int] | None = None
     annotation_style: str = "raw"
     ruler_band_size: int | None = None
+    major_grid_size: int | None = None
     content_origin: tuple[int, int] | None = None
     content_bounds_in_image: tuple[int, int, int, int] | None = None
 
@@ -87,6 +89,7 @@ def _draw_grid(image: Image.Image, grid_size: int, offset_x: int = 0, offset_y: 
     content = image.convert("RGB")
     content_width, content_height = content.size
     band = RULER_BAND_SIZE
+    major_grid_size = max(grid_size * 2, 100)
     annotated = Image.new(
         "RGB",
         (content_width + band * 2, content_height + band * 2),
@@ -110,50 +113,55 @@ def _draw_grid(image: Image.Image, grid_size: int, offset_x: int = 0, offset_y: 
     for x in range(0, content_width, grid_size):
         image_x = content_left + x
         screen_x = offset_x + x
+        is_major_line = screen_x % major_grid_size == 0
         draw.line(
             [(image_x, content_top), (image_x, content_bottom - 1)],
-            fill=GRID_LINE_COLOR,
-            width=1,
+            fill=MAJOR_GRID_LINE_COLOR if is_major_line else GRID_LINE_COLOR,
+            width=2 if is_major_line else 1,
         )
-        draw.line(
-            [(image_x, content_top - 12), (image_x, content_top)],
-            fill=RULER_TICK_COLOR,
-            width=2,
-        )
-        draw.line(
-            [(image_x, content_bottom - 1), (image_x, content_bottom + 11)],
-            fill=RULER_TICK_COLOR,
-            width=2,
-        )
-        label = str(screen_x)
-        _draw_band_label(draw, image_x, band // 2, label, font=font)
-        _draw_band_label(draw, image_x, content_bottom + band // 2, label, font=font)
+        if is_major_line:
+            draw.line(
+                [(image_x, content_top - 14), (image_x, content_top)],
+                fill=RULER_TICK_COLOR,
+                width=2,
+            )
+            draw.line(
+                [(image_x, content_bottom - 1), (image_x, content_bottom + 13)],
+                fill=RULER_TICK_COLOR,
+                width=2,
+            )
+            label = str(screen_x)
+            _draw_band_label(draw, image_x, band // 2, label, font=font)
+            _draw_band_label(draw, image_x, content_bottom + band // 2, label, font=font)
 
     for y in range(0, content_height, grid_size):
         image_y = content_top + y
         screen_y = offset_y + y
+        is_major_line = screen_y % major_grid_size == 0
         draw.line(
             [(content_left, image_y), (content_right - 1, image_y)],
-            fill=GRID_LINE_COLOR,
-            width=1,
+            fill=MAJOR_GRID_LINE_COLOR if is_major_line else GRID_LINE_COLOR,
+            width=2 if is_major_line else 1,
         )
-        draw.line(
-            [(content_left - 12, image_y), (content_left, image_y)],
-            fill=RULER_TICK_COLOR,
-            width=2,
-        )
-        draw.line(
-            [(content_right - 1, image_y), (content_right + 11, image_y)],
-            fill=RULER_TICK_COLOR,
-            width=2,
-        )
-        label = str(screen_y)
-        _draw_band_label(draw, band // 2, image_y, label, font=font)
-        _draw_band_label(draw, content_right + band // 2, image_y, label, font=font)
+        if is_major_line:
+            draw.line(
+                [(content_left - 14, image_y), (content_left, image_y)],
+                fill=RULER_TICK_COLOR,
+                width=2,
+            )
+            draw.line(
+                [(content_right - 1, image_y), (content_right + 13, image_y)],
+                fill=RULER_TICK_COLOR,
+                width=2,
+            )
+            label = str(screen_y)
+            _draw_band_label(draw, band // 2, image_y, label, font=font)
+            _draw_band_label(draw, content_right + band // 2, image_y, label, font=font)
 
     return annotated, {
         "annotation_style": "outer-ruler-band",
         "ruler_band_size": band,
+        "major_grid_size": major_grid_size,
         "content_origin": (content_left, content_top),
         "content_bounds_in_image": (
             content_left,
@@ -224,7 +232,7 @@ def capture(
     output_path: str | Path,
     target: CaptureTarget = "active-window",
     draw_grid: bool = False,
-    grid_size: int = 100,
+    grid_size: int = 50,
     window_title_query: str | None = None,
     window_exact: bool = False,
     image_format: ImageFormat | None = None,
@@ -306,6 +314,7 @@ def capture(
         bounds=bounds,
         annotation_style=annotation_style,
         ruler_band_size=ruler_band_size,
+        major_grid_size=int(annotation_meta["major_grid_size"]) if draw_grid else None,
         content_origin=content_origin,
         content_bounds_in_image=content_bounds_in_image,
     )

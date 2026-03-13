@@ -4,9 +4,13 @@ Coordinate system rules:
 - Screen coordinates always mean: top-left is (0, 0), x increases to the right, y increases downward.
 - If the image includes outer ruler bands, those bands are only annotations and are not part of the returned coordinate system.
 - If a red coordinate grid is visible:
-  - each vertical red line label is the exact x coordinate of that line
-  - each horizontal red line label is the exact y coordinate of that line
-  - use those labels directly instead of inventing your own scaling or spacing
+  - thin grid lines may appear every 50px
+  - emphasized major grid lines appear every 100px
+  - only the emphasized major grid lines are labeled
+  - each vertical label is the exact x coordinate of that major line
+  - each horizontal label is the exact y coordinate of that major line
+  - unlabeled intermediate 50px grid lines are still valid for estimating precise coordinates
+  - use the labeled 100px lines and the unlabeled 50px intermediate lines directly instead of inventing your own scaling or spacing
 - Return both `bbox` and `click_point` when an element is actionable.
 - `click_point` should be the preferred single pixel target to click.
 """.strip()
@@ -38,6 +42,7 @@ def build_coordinate_rules_prompt(
     bounds: list[int] | tuple[int, int, int, int] | None = None,
     grid_enabled: bool = False,
     grid_size: int | None = None,
+    major_grid_size: int | None = None,
     annotation_style: str | None = None,
     ruler_band_size: int | None = None,
     content_origin: list[int] | tuple[int, int] | None = None,
@@ -99,13 +104,17 @@ def build_coordinate_rules_prompt(
 
     if grid_enabled:
         interval = grid_size if grid_size is not None else "unknown"
+        major_interval = major_grid_size if major_grid_size is not None else "unknown"
         lines.extend(
             [
-                f"- A red coordinate grid is visible and adjacent grid lines are spaced every {interval}px.",
-                "- Each vertical red line label is the exact x coordinate of that line.",
-                "- Each horizontal red line label is the exact y coordinate of that line.",
+                f"- A red fine grid is visible and adjacent grid lines are spaced every {interval}px.",
+                f"- Emphasized major grid lines appear every {major_interval}px.",
+                "- Only the emphasized major grid lines are labeled on the ruler band.",
+                "- Each vertical major-line label is the exact x coordinate of that major line.",
+                "- Each horizontal major-line label is the exact y coordinate of that major line.",
+                "- The unlabeled intermediate 50px grid lines are still real coordinate guides and can be used to estimate precise positions between labeled major lines.",
                 "- When grid labels are visible, they override any visual guesswork.",
-                "- Use the labels and line intersections directly; do not estimate coordinates from neighboring icon spacing.",
+                "- Use the labels, major-line intersections, and intermediate 50px grid lines directly; do not estimate coordinates from neighboring icon spacing.",
             ]
         )
     else:

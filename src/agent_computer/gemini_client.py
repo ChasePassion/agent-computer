@@ -101,6 +101,7 @@ class GeminiDesktopOCR:
             bounds=metadata.get("bounds"),
             grid_enabled=bool(metadata.get("grid_enabled", False)),
             grid_size=metadata.get("grid_size"),
+            major_grid_size=metadata.get("major_grid_size"),
             annotation_style=metadata.get("annotation_style"),
             ruler_band_size=metadata.get("ruler_band_size"),
             content_origin=metadata.get("content_origin"),
