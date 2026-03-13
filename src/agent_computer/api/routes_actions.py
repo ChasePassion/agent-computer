@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from agent_computer.api.deps import get_registry
-from agent_computer.models.requests import ClickElementRequest, ClickRequest, HotkeyRequest, MoveRequest, PasteRequest, PressRequest, ScrollRequest, TypeRequest
+from agent_computer.models.requests import ClickRequest, HotkeyRequest, MoveRequest, PasteRequest, PressRequest, ScrollRequest, TypeRequest
 from agent_computer.services.registry import ServiceRegistry
 
 router = APIRouter(prefix="/actions", tags=["actions"])
@@ -19,20 +19,6 @@ def move(request: MoveRequest, registry: ServiceRegistry = Depends(get_registry)
 def click(request: ClickRequest, registry: ServiceRegistry = Depends(get_registry)) -> dict:
     with registry.execution_lock:
         return registry.actions.click(x=request.x, y=request.y, button=request.button, double=request.double)
-
-
-@router.post("/click-element")
-def click_element(
-    request: ClickElementRequest,
-    registry: ServiceRegistry = Depends(get_registry),
-) -> dict:
-    with registry.execution_lock:
-        return registry.actions.click_element(
-            json_file=request.json_file,
-            index=request.index,
-            button=request.button,
-            double=request.double,
-        )
 
 
 @router.post("/scroll")

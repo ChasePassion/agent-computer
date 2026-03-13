@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 
 from agent_computer.api.routes_actions import router as actions_router
 from agent_computer.api.routes_capture import router as capture_router
-from agent_computer.api.routes_gemini import router as gemini_router
 from agent_computer.api.routes_navigation import router as navigation_router
 from agent_computer.api.routes_system import router as system_router
 from agent_computer.runtime import ensure_runtime_dirs
@@ -27,7 +26,6 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.state.server = None
     app.include_router(system_router)
     app.include_router(capture_router)
-    app.include_router(gemini_router)
     app.include_router(navigation_router)
     app.include_router(actions_router)
 

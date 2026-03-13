@@ -9,12 +9,9 @@ import httpx
 from agent_computer.client import DaemonClient
 from agent_computer.daemon import main as daemon_main
 from agent_computer.models.requests import (
-    AnalyzeRequest,
     CaptureGridRequest,
-    CaptureOcrRequest,
     CapturePreviewRequest,
     CaptureRequest,
-    ClickElementRequest,
     ClickRequest,
     FocusRequest,
     HotkeyRequest,
@@ -29,13 +26,6 @@ from agent_computer.models.requests import (
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-
-
-def _print_analysis_result(payload: dict[str, Any]) -> None:
-    if payload.get("parsed_json") is not None:
-        _print_json(payload["parsed_json"])
-    else:
-        print(payload.get("raw_text", ""))
 
 
 def _call(
@@ -62,14 +52,12 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
             format=args.format,
             jpeg_quality=args.jpeg_quality,
         ).model_dump()
-        result = _call(client, method="POST", path="/capture", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/capture", payload=payload))
         return
 
     if command == "capture-preview":
         payload = CapturePreviewRequest(output=args.output, jpeg_quality=args.jpeg_quality).model_dump()
-        result = _call(client, method="POST", path="/capture/preview", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/capture/preview", payload=payload))
         return
 
     if command == "capture-grid":
@@ -78,127 +66,56 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
             grid_size=args.grid_size,
             jpeg_quality=args.jpeg_quality,
         ).model_dump()
-        result = _call(client, method="POST", path="/capture/grid", payload=payload)
-        _print_json(result)
-        return
-
-    if command == "ocr":
-        payload = AnalyzeRequest(
-            image=args.image,
-            model=args.model,
-            prompt=args.prompt,
-            prompt_file=args.prompt_file,
-            target_description=None,
-            json_output=args.json_output,
-            prompt_output=args.prompt_output,
-        ).model_dump()
-        result = _call(client, method="POST", path="/gemini/ocr", payload=payload)
-        _print_analysis_result(result)
-        return
-
-    if command == "locate":
-        payload = AnalyzeRequest(
-            image=args.image,
-            model=args.model,
-            prompt=args.prompt,
-            prompt_file=args.prompt_file,
-            target_description=args.target_description,
-            json_output=args.json_output,
-            prompt_output=args.prompt_output,
-        ).model_dump()
-        result = _call(client, method="POST", path="/gemini/locate", payload=payload)
-        _print_analysis_result(result)
-        return
-
-    if command == "capture-ocr":
-        payload = CaptureOcrRequest(
-            output=args.output,
-            target=args.target,
-            window_title=args.window_title,
-            window_exact=args.window_exact,
-            grid=args.grid,
-            grid_size=args.grid_size,
-            format=args.format,
-            jpeg_quality=args.jpeg_quality,
-            model=args.model,
-            prompt=args.prompt,
-            prompt_file=args.prompt_file,
-            target_description=None,
-            json_output=args.json_output,
-            prompt_output=args.prompt_output,
-        ).model_dump()
-        result = _call(client, method="POST", path="/capture/ocr", payload=payload)
-        _print_analysis_result(result)
+        _print_json(_call(client, method="POST", path="/capture/grid", payload=payload))
         return
 
     if command == "windows":
-        result = _call(client, method="GET", path="/navigation/windows")
-        _print_json(result)
+        _print_json(_call(client, method="GET", path="/navigation/windows"))
         return
 
     if command == "focus":
         payload = FocusRequest(title=args.title, exact=args.exact).model_dump()
-        result = _call(client, method="POST", path="/navigation/focus", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/navigation/focus", payload=payload))
         return
 
     if command == "move":
         payload = MoveRequest(x=args.x, y=args.y, duration=args.duration).model_dump()
-        result = _call(client, method="POST", path="/actions/move", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/move", payload=payload))
         return
 
     if command == "click":
         payload = ClickRequest(x=args.x, y=args.y, button=args.button, double=args.double).model_dump()
-        result = _call(client, method="POST", path="/actions/click", payload=payload)
-        _print_json(result)
-        return
-
-    if command == "click-element":
-        payload = ClickElementRequest(
-            json_file=args.json_file,
-            index=args.index,
-            button=args.button,
-            double=args.double,
-        ).model_dump()
-        result = _call(client, method="POST", path="/actions/click-element", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/click", payload=payload))
         return
 
     if command == "scroll":
         payload = ScrollRequest(amount=args.amount).model_dump()
-        result = _call(client, method="POST", path="/actions/scroll", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/scroll", payload=payload))
         return
 
     if command == "type":
         payload = TypeRequest(text=args.text, interval=args.interval).model_dump()
-        result = _call(client, method="POST", path="/actions/type", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/type", payload=payload))
         return
 
     if command == "paste":
         payload = PasteRequest(text=args.text, restore_clipboard=args.restore_clipboard).model_dump()
-        result = _call(client, method="POST", path="/actions/paste", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/paste", payload=payload))
         return
 
     if command == "open-url":
         payload = OpenUrlRequest(url=args.url, restore_clipboard=args.restore_clipboard).model_dump()
-        result = _call(client, method="POST", path="/navigation/open-url", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/navigation/open-url", payload=payload))
         return
 
     if command == "press":
         payload = PressRequest(key=args.key).model_dump()
-        result = _call(client, method="POST", path="/actions/press", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/press", payload=payload))
         return
 
     if command == "hotkey":
         payload = HotkeyRequest(keys=args.keys).model_dump()
-        result = _call(client, method="POST", path="/actions/hotkey", payload=payload)
-        _print_json(result)
+        _print_json(_call(client, method="POST", path="/actions/hotkey", payload=payload))
         return
 
     raise RuntimeError(f"Unsupported command: {command}")
@@ -214,8 +131,7 @@ def _handle_daemon(args: argparse.Namespace) -> None:
 
     if args.daemon_command == "start":
         client.start_background()
-        result = client.wait_until_ready()
-        _print_json(result)
+        _print_json(client.wait_until_ready())
         return
 
     if args.daemon_command == "status":
@@ -232,13 +148,13 @@ def _handle_daemon(args: argparse.Namespace) -> None:
             _print_json({"status": "not_running", "host": args.host, "port": args.port})
         return
 
-    raise RuntimeError(f"Unsupported daemon command: {args.daemon_command}")
+    raise RuntimeError(f"Unsupported command: {args.daemon_command}")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-computer",
-        description="Capture Windows desktop screenshots, analyze them with Gemini, and drive desktop actions.",
+        description="Capture Windows desktop screenshots and drive desktop actions.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -277,63 +193,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     preview_parser = subparsers.add_parser(
         "capture-preview",
-        help="Capture a lightweight full-screen JPEG preview for Codex to inspect directly.",
+        help="Capture a lightweight full-screen JPEG preview for direct inspection.",
     )
     preview_parser.add_argument("--output", help="Path to save the preview image.")
     preview_parser.add_argument("--jpeg-quality", **common_capture["jpeg_quality"])
 
     grid_parser = subparsers.add_parser(
         "capture-grid",
-        help="Capture a full-screen high-quality JPEG with absolute coordinate grid for Gemini coordinate lookup.",
+        help="Capture a full-screen high-quality JPEG with absolute coordinate grid.",
     )
     grid_parser.add_argument("--output", help="Path to save the grid image.")
     grid_parser.add_argument("--grid-size", **common_capture["grid_size"])
     grid_parser.add_argument("--jpeg-quality", **common_capture["jpeg_quality"])
 
-    ocr_parser = subparsers.add_parser("ocr", help="Run Gemini OCR/GUI understanding on an image.")
-    ocr_parser.add_argument("--image", required=True, help="Path to the image file.")
-    ocr_parser.add_argument("--model", default=None, help="Gemini model name.")
-    ocr_parser.add_argument("--prompt", default=None, help="Inline prompt override.")
-    ocr_parser.add_argument("--prompt-file", default=None, help="Path to a custom prompt file.")
-    ocr_parser.add_argument("--json-output", default=None, help="Path to save raw result JSON.")
-    ocr_parser.add_argument("--prompt-output", default=None, help="Path to save the final prompt sent to Gemini.")
-
-    locate_parser = subparsers.add_parser(
-        "locate",
-        help="Use Gemini to locate a target on an image. Accepts either a custom prompt or a target description.",
-    )
-    locate_parser.add_argument("--image", required=True, help="Path to the image file.")
-    locate_parser.add_argument("--model", default=None, help="Gemini model name.")
-    locate_parser.add_argument("--target-description", default=None, help="Short target description.")
-    locate_parser.add_argument("--prompt", default=None, help="Inline custom prompt override.")
-    locate_parser.add_argument("--prompt-file", default=None, help="Path to a custom prompt file.")
-    locate_parser.add_argument("--json-output", default=None, help="Path to save raw result JSON.")
-    locate_parser.add_argument("--prompt-output", default=None, help="Path to save the final prompt sent to Gemini.")
-
-    capture_ocr_parser = subparsers.add_parser(
-        "capture-ocr",
-        help="Capture first, then run Gemini OCR/GUI understanding.",
-    )
-    capture_ocr_parser.add_argument("--output", help="Path to save the screenshot.")
-    capture_ocr_parser.add_argument(
-        "--target",
-        choices=["active-window", "primary-screen"],
-        default="primary-screen",
-        help="What to capture.",
-    )
-    capture_ocr_parser.add_argument("--window-title", default=None, help="Capture a visible window by title match.")
-    capture_ocr_parser.add_argument("--window-exact", action="store_true", help="Require exact window title match.")
-    capture_ocr_parser.add_argument("--grid", action="store_true", help="Overlay a coordinate grid.")
-    capture_ocr_parser.add_argument("--grid-size", **common_capture["grid_size"])
-    capture_ocr_parser.add_argument("--format", **common_capture["format"])
-    capture_ocr_parser.add_argument("--jpeg-quality", **common_capture["jpeg_quality"])
-    capture_ocr_parser.add_argument("--model", default=None, help="Gemini model name.")
-    capture_ocr_parser.add_argument("--prompt", default=None, help="Inline prompt override.")
-    capture_ocr_parser.add_argument("--prompt-file", default=None, help="Path to a custom prompt file.")
-    capture_ocr_parser.add_argument("--json-output", default=None, help="Path to save raw result JSON.")
-    capture_ocr_parser.add_argument("--prompt-output", default=None, help="Path to save the final prompt sent to Gemini.")
-
-    windows_parser = subparsers.add_parser("windows", help="List visible desktop windows.")
+    subparsers.add_parser("windows", help="List visible desktop windows.")
 
     focus_parser = subparsers.add_parser("focus", help="Focus a visible window by title match.")
     focus_parser.add_argument("--title", required=True, help="Substring to match against visible window titles.")
@@ -349,15 +222,6 @@ def build_parser() -> argparse.ArgumentParser:
     click_parser.add_argument("--y", required=True, type=int, help="Screen Y coordinate.")
     click_parser.add_argument("--button", default="left", choices=["left", "right", "middle"], help="Mouse button.")
     click_parser.add_argument("--double", action="store_true", help="Double click instead of single click.")
-
-    click_element_parser = subparsers.add_parser(
-        "click-element",
-        help="Click an element from a prior OCR JSON result by index.",
-    )
-    click_element_parser.add_argument("--json-file", required=True, help="Path to a JSON result file.")
-    click_element_parser.add_argument("--index", required=True, type=int, help="Zero-based element index.")
-    click_element_parser.add_argument("--button", default="left", choices=["left", "right", "middle"], help="Mouse button.")
-    click_element_parser.add_argument("--double", action="store_true", help="Double click instead of single click.")
 
     scroll_parser = subparsers.add_parser("scroll", help="Scroll the mouse wheel.")
     scroll_parser.add_argument("--amount", required=True, type=int, help="Positive scrolls up, negative scrolls down.")

@@ -41,22 +41,6 @@ function Write-PrettyJson {
     $Payload | ConvertTo-Json -Depth 100
 }
 
-function Write-AnalysisResult {
-    param([object]$Payload)
-
-    if ($null -ne $Payload -and $null -ne $Payload.parsed_json) {
-        Write-PrettyJson $Payload.parsed_json
-        return
-    }
-
-    if ($null -ne $Payload -and $null -ne $Payload.raw_text) {
-        Write-Output $Payload.raw_text
-        return
-    }
-
-    Write-PrettyJson $Payload
-}
-
 function Convert-OptionValue {
     param(
         [string]$RawValue,
@@ -207,8 +191,7 @@ function Invoke-DaemonRequest {
     param(
         [string]$Method,
         [string]$Path,
-        [object]$Body = $null,
-        [switch]$AnalysisResult
+        [object]$Body = $null
     )
 
     Ensure-DaemonRunning | Out-Null
@@ -221,11 +204,7 @@ function Invoke-DaemonRequest {
         $response = Invoke-RestMethod -Uri $uri -Method $Method -ContentType "application/json; charset=utf-8" -Body $jsonBody
     }
 
-    if ($AnalysisResult) {
-        Write-AnalysisResult $response
-    } else {
-        Write-PrettyJson $response
-    }
+    Write-PrettyJson $response
 }
 
 if ($Args.Count -eq 0) {
@@ -305,71 +284,6 @@ try {
             break
         }
 
-        "ocr" {
-            $payload = Parse-Options -CommandArgs $commandArgs `
-                -AliasToKey @{
-                    "image" = "image"
-                    "model" = "model"
-                    "prompt" = "prompt"
-                    "prompt-file" = "prompt_file"
-                    "json-output" = "json_output"
-                    "prompt-output" = "prompt_output"
-                } `
-                -RequiredKeys @("image")
-            Invoke-DaemonRequest -Method POST -Path "/gemini/ocr" -Body $payload -AnalysisResult
-            break
-        }
-
-        "locate" {
-            $payload = Parse-Options -CommandArgs $commandArgs `
-                -AliasToKey @{
-                    "image" = "image"
-                    "model" = "model"
-                    "target-description" = "target_description"
-                    "prompt" = "prompt"
-                    "prompt-file" = "prompt_file"
-                    "json-output" = "json_output"
-                    "prompt-output" = "prompt_output"
-                } `
-                -RequiredKeys @("image")
-            Invoke-DaemonRequest -Method POST -Path "/gemini/locate" -Body $payload -AnalysisResult
-            break
-        }
-
-        "capture-ocr" {
-            $payload = Parse-Options -CommandArgs $commandArgs `
-                -AliasToKey @{
-                    "output" = "output"
-                    "target" = "target"
-                    "window-title" = "window_title"
-                    "window-exact" = "window_exact"
-                    "grid" = "grid"
-                    "grid-size" = "grid_size"
-                    "format" = "format"
-                    "jpeg-quality" = "jpeg_quality"
-                    "model" = "model"
-                    "prompt" = "prompt"
-                    "prompt-file" = "prompt_file"
-                    "json-output" = "json_output"
-                    "prompt-output" = "prompt_output"
-                } `
-                -Flags @("window-exact", "grid") `
-                -Types @{
-                    "grid_size" = "int"
-                    "jpeg_quality" = "int"
-                } `
-                -Defaults @{
-                    "target" = "primary-screen"
-                    "window_exact" = $false
-                    "grid" = $false
-                    "grid_size" = 50
-                    "format" = "png"
-                    "jpeg_quality" = 75
-                }
-            Invoke-DaemonRequest -Method POST -Path "/capture/ocr" -Body $payload -AnalysisResult
-            break
-        }
-
         "windows" {
             if ($commandArgs.Count -gt 0) {
                 throw "windows does not accept additional arguments."
@@ -432,27 +346,6 @@ try {
                 } `
                 -RequiredKeys @("x", "y")
             Invoke-DaemonRequest -Method POST -Path "/actions/click" -Body $payload
-            break
-        }
-
-        "click-element" {
-            $payload = Parse-Options -CommandArgs $commandArgs `
-                -AliasToKey @{
-                    "json-file" = "json_file"
-                    "index" = "index"
-                    "button" = "button"
-                    "double" = "double"
-                } `
-                -Flags @("double") `
-                -Types @{
-                    "index" = "int"
-                } `
-                -Defaults @{
-                    "button" = "left"
-                    "double" = $false
-                } `
-                -RequiredKeys @("json_file", "index")
-            Invoke-DaemonRequest -Method POST -Path "/actions/click-element" -Body $payload
             break
         }
 
