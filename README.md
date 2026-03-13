@@ -4,8 +4,8 @@
 
 现在它只保留纯桌面控制与截图能力：
 
-- 轻量预览截图
 - 绝对坐标网格截图
+- 轻量预览截图
 - 通用截图
 - 列出窗口 / 聚焦窗口
 - 点击 / 双击 / 移动 / 滚动
@@ -16,9 +16,12 @@
 如果需要定位元素，推荐流程是：
 
 1. 先抓整屏网格图
-2. 由 Codex 直接查看网格图
-3. 人工或 Codex 自己读取坐标
-4. 再调用点击、滚动、输入等桌面动作
+2. 由 Codex 直接查看网格图并读取当前坐标
+3. 调用点击、滚动、输入等桌面动作
+4. 再次抓整屏网格图，确认状态并顺便读取下一步坐标
+5. 如此循环
+
+只有在网格图看不清楚当前状态时，才额外使用纯净截图做兜底观察。
 
 ## 1. 创建 conda 环境
 
@@ -51,7 +54,7 @@ pip install -e .
 
 1. 能拿到可靠 URL：优先直接打开 URL
 2. 拿不到 URL，但能构造稳定 URL：优先直接构造并打开
-3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `capture-grid -> 手动读坐标 -> click`
+3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `capture-grid -> 读坐标 -> click -> capture-grid -> ...`
 
 也就是说：
 
@@ -73,18 +76,10 @@ agent-computer open-url --url "https://www.zhipin.com/web/geek/jobs?city=1012101
 - 把 URL 放进剪贴板并粘贴
 - 发送 `Enter`
 
-### 3.3 预览截图
-
-给 Codex 自己看屏幕用。默认整屏、无网格、压缩 JPEG。
-
-```powershell
-agent-computer capture-preview
-agent-computer capture-preview --output .\artifacts\preview.jpg
-```
-
-### 3.4 网格截图
+### 3.3 网格截图
 
 给 Codex 或人工读取精确坐标用。默认整屏、带绝对坐标网格、高质量 JPEG。
+这也是默认截图方式。
 
 当前网格的绘制方式是：
 
@@ -98,6 +93,24 @@ agent-computer capture-preview --output .\artifacts\preview.jpg
 ```powershell
 agent-computer capture-grid
 agent-computer capture-grid --grid-size 50 --jpeg-quality 90 --output .\artifacts\grid.jpg
+```
+
+推荐使用方式：
+
+1. `capture-grid`
+2. Codex 查看网格图并读取当前目标坐标
+3. `click` / `scroll` / `paste` / `press`
+4. 再次 `capture-grid` 查看状态并读取下一步坐标
+5. 重复这个循环
+
+### 3.4 预览截图
+
+给 Codex 做纯净观察用。默认整屏、无网格、压缩 JPEG。
+只有在网格图看不清当前状态、文字被网格干扰、或你需要单独确认视觉细节时，才建议使用。
+
+```powershell
+agent-computer capture-preview
+agent-computer capture-preview --output .\artifacts\preview.jpg
 ```
 
 ### 3.5 通用截图
@@ -153,14 +166,15 @@ agent-computer hotkey ctrl shift s
 
 ## 5. 推荐给 Codex 的使用方式
 
-推荐这样组合，而不是依赖一个黑盒流程：
+默认推荐这样组合，而不是依赖一个黑盒流程：
 
 1. 如果目标页面 URL 已知，先用 `open-url`
-2. 用 `capture-preview` 看当前屏幕
-3. 当需要精确坐标时，用 `capture-grid`
-4. 由 Codex 直接查看网格图并人工读取坐标
-5. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
-6. 再次 `capture-preview` 确认页面状态
+2. 用 `capture-grid` 获取当前整屏网格图
+3. 由 Codex 直接查看网格图，读取当前目标坐标
+4. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+5. 再次 `capture-grid` 查看页面状态，并顺便读取下一步坐标
+6. 按 `capture-grid -> 读坐标 -> 动作 -> capture-grid` 的方式循环推进
+7. 只有当网格图看不清当前状态时，才临时使用 `capture-preview`
 
 ## 6. 便捷启动
 
@@ -168,9 +182,10 @@ agent-computer hotkey ctrl shift s
 
 ```powershell
 .\run.ps1 open-url --url "https://www.zhipin.com/"
-.\run.ps1 capture-preview
 .\run.ps1 capture-grid --grid-size 50
 .\run.ps1 click --x 500 --y 920
+.\run.ps1 capture-grid --grid-size 50
+.\run.ps1 capture-preview
 ```
 
 现在 `.\run.ps1` 会优先直接请求本地 daemon HTTP 接口，而不是每次都重新启动 Python CLI。
