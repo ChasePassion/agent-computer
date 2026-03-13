@@ -30,6 +30,9 @@
 
 - 如果目标站点的操作手册已经给出了目标信息，以手册为准
 - 当操作没有出现预期行为的时候，首先应该认为是自己的定位不准确
+- 每次对目标开始操作之前，首先阅读相关的 skill / 操作手册
+- 当实际操作时出现“操作手册中不存在的行为 -> 结果映射”时，需要把新映射追加到对应手册中
+- 追加手册时，至少记录当时的 URL、鼠标坐标、触发动作和页面反馈
 
 ## 1. 创建 conda 环境
 
@@ -186,6 +189,7 @@ agent-computer windows
 
 ```powershell
 agent-computer focus --title "Windows PowerShell"
+agent-computer maximize --title "Google Chrome"
 ```
 
 按坐标点击：
@@ -225,14 +229,17 @@ agent-computer hotkey ctrl shift s
 
 1. 如果目标页面 URL 已知，先用 `open-url`
 2. 聚焦目标窗口，并确保目标窗口已经最大化
-3. 用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
-4. Model 默认读取 `model_default_image_url`，也就是 latest grid image
-5. 如需确认 freshness，再读取 `model_default_meta_url`
-6. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
-7. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
-8. 再次读取 latest grid image，并顺便读取下一步坐标
-9. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
-10. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
+   推荐顺序：先 `focus`，再 `maximize`
+3. 开始操作之前，先阅读相关的 skill / 操作手册
+4. 用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
+5. Model 默认读取 `model_default_image_url`，也就是 latest grid image
+6. 如需确认 freshness，再读取 `model_default_meta_url`
+7. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
+8. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+9. 再次读取 latest grid image，并顺便读取下一步坐标
+10. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
+11. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
+12. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
 ## 6. 便捷启动
 
@@ -243,6 +250,7 @@ agent-computer hotkey ctrl shift s
 .\windows-launcher.ps1 browser-back
 .\windows-launcher.ps1 browser-forward
 .\windows-launcher.ps1 browser-refresh
+.\windows-launcher.ps1 maximize --title "Google Chrome"
 .\windows-launcher.ps1 observation urls
 .\windows-launcher.ps1 capture-grid --grid-size 50
 .\windows-launcher.ps1 click --x 500 --y 920

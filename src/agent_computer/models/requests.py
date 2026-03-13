@@ -31,6 +31,11 @@ class FocusRequest(BaseModel):
     exact: bool = False
 
 
+class MaximizeRequest(BaseModel):
+    title: str
+    exact: bool = False
+
+
 class MoveRequest(BaseModel):
     x: int
     y: int

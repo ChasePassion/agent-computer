@@ -16,6 +16,7 @@ from agent_computer.models.requests import (
     ClickRequest,
     FocusRequest,
     HotkeyRequest,
+    MaximizeRequest,
     MoveRequest,
     OpenUrlRequest,
     PasteRequest,
@@ -103,6 +104,11 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
     if command == "focus":
         payload = FocusRequest(title=args.title, exact=args.exact).model_dump()
         _print_json(_call(client, method="POST", path="/navigation/focus", payload=payload))
+        return
+
+    if command == "maximize":
+        payload = MaximizeRequest(title=args.title, exact=args.exact).model_dump()
+        _print_json(_call(client, method="POST", path="/navigation/maximize", payload=payload))
         return
 
     if command == "move":
@@ -282,6 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
     focus_parser = subparsers.add_parser("focus", help="Focus a visible window by title match.")
     focus_parser.add_argument("--title", required=True, help="Substring to match against visible window titles.")
     focus_parser.add_argument("--exact", action="store_true", help="Require exact title match.")
+
+    maximize_parser = subparsers.add_parser("maximize", help="Maximize a visible window by title match.")
+    maximize_parser.add_argument("--title", required=True, help="Substring to match against visible window titles.")
+    maximize_parser.add_argument("--exact", action="store_true", help="Require exact title match.")
 
     move_parser = subparsers.add_parser("move", help="Move the mouse cursor.")
     move_parser.add_argument("--x", required=True, type=int, help="Screen X coordinate.")

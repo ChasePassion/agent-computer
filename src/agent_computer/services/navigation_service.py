@@ -4,7 +4,7 @@ from typing import Any
 
 from agent_computer.actions import browser_back, browser_forward, browser_refresh, open_url
 from agent_computer.services.session_service import SessionService
-from agent_computer.windowing import focus_window, list_windows
+from agent_computer.windowing import focus_window, list_windows, maximize_window
 
 
 class NavigationService:
@@ -17,6 +17,11 @@ class NavigationService:
     def focus(self, *, title: str, exact: bool = False) -> dict[str, Any]:
         window = focus_window(title, exact=exact)
         payload = window.to_dict()
+        self.session.set_last_window(payload)
+        return payload
+
+    def maximize(self, *, title: str, exact: bool = False) -> dict[str, Any]:
+        payload = maximize_window(title, exact=exact)
         self.session.set_last_window(payload)
         return payload
 
