@@ -83,6 +83,9 @@ agent-computer browser-refresh
 - `browser-back` 的行为是：`Alt+Left`
 - `browser-forward` 的行为是：`Alt+Right`
 - `browser-refresh` 的行为是：`Ctrl+R`
+- 在操作浏览器网页时，如果误触进入了同一网站的下一个页面，可以直接使用 `browser-back` 返回
+- 一般情况下，执行 `browser-back` 之后，可以默认浏览器已经回到上一个页面，并继续使用上一张 frame 推进，而不需要立刻重新查看当前页面
+- 例外是会实时变化的网页；这类页面在执行 `browser-back` 之后，仍然建议重新截图确认当前状态
 
 ### 3.3 网格截图
 
@@ -209,3 +212,48 @@ agent-computer hotkey ctrl shift s
 现在 `.\run.ps1` 会优先直接请求本地 daemon HTTP 接口，而不是每次都重新启动 Python CLI。
 这能显著减少 `click`、`focus`、`capture-preview`、`open-url` 这类高频原子动作的单次开销。
 `daemon start/status/stop/run` 仍然复用原有 Python 入口。
+
+## 7. Observation Layer
+
+项目支持一套统一的 Observation Layer：
+
+- Human 默认看 `preview`
+- Model 默认取 `grid`
+- `snapshot` 能力继续保留，不被替代
+
+Observation latest 文件位于：
+
+- `artifacts\observation\preview_latest.jpg`
+- `artifacts\observation\grid_latest.jpg`
+
+token 位于：
+
+- `.agent\observation.json`
+
+核心访问路径：
+
+```text
+/live?token=<TOKEN>
+/observation/latest.jpg?token=<TOKEN>&mode=preview
+/observation/latest.jpg?token=<TOKEN>&mode=grid
+/observation/latest.json?token=<TOKEN>&mode=grid
+```
+
+推荐启动方式：
+
+```powershell
+.\scripts\start_observation_local.ps1
+.\scripts\show_observation_urls.ps1
+```
+
+如果需要远程访问：
+
+```powershell
+.\scripts\start_observation_tunnel.ps1 -RelayHost <public-host> -RelayUser <user>
+.\scripts\show_observation_urls.ps1
+```
+
+Nginx 反向代理模板位于：
+
+- `deploy\nginx\agent-computer-observation.conf.example`
+- `deploy\observation.remote.json.example`

@@ -189,6 +189,19 @@ def _get_primary_monitor_region() -> dict:
         }
 
 
+def _save_image(image: Image.Image, output: Path, *, image_format: ImageFormat, jpeg_quality: int) -> None:
+    save_kwargs: dict = {}
+    if image_format == "jpeg":
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        save_kwargs["format"] = "JPEG"
+        save_kwargs["quality"] = jpeg_quality
+        save_kwargs["optimize"] = True
+    else:
+        save_kwargs["format"] = "PNG"
+    image.save(output, **save_kwargs)
+
+
 def _get_active_window_region() -> tuple[dict, str | None, int]:
     hwnd = win32gui.GetForegroundWindow()
     if not hwnd:
@@ -289,17 +302,7 @@ def capture(
         suffix = output.suffix.lower()
         final_format = "jpeg" if suffix in {".jpg", ".jpeg"} else "png"
 
-    save_kwargs: dict = {}
-    if final_format == "jpeg":
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        save_kwargs["format"] = "JPEG"
-        save_kwargs["quality"] = jpeg_quality
-        save_kwargs["optimize"] = True
-    else:
-        save_kwargs["format"] = "PNG"
-
-    image.save(output, **save_kwargs)
+    _save_image(image, output, image_format=final_format, jpeg_quality=jpeg_quality)
 
     return CaptureResult(
         image_path=str(output),
@@ -318,3 +321,69 @@ def capture(
         content_origin=content_origin,
         content_bounds_in_image=content_bounds_in_image,
     )
+
+
+def capture_observation_pair(
+    *,
+    preview_output_path: str | Path,
+    grid_output_path: str | Path,
+    grid_size: int = 50,
+    jpeg_quality: int = 75,
+) -> tuple[CaptureResult, CaptureResult]:
+    preview_output = Path(preview_output_path)
+    grid_output = Path(grid_output_path)
+    _ensure_parent(preview_output)
+    _ensure_parent(grid_output)
+
+    region = _get_primary_monitor_region()
+    bounds = (
+        region["left"],
+        region["top"],
+        region["left"] + region["width"],
+        region["top"] + region["height"],
+    )
+    image = _grab_region(region)
+
+    _save_image(image, preview_output, image_format="jpeg", jpeg_quality=jpeg_quality)
+    preview_result = CaptureResult(
+        image_path=str(preview_output),
+        target="primary-screen",
+        width=image.width,
+        height=image.height,
+        image_format="jpeg",
+        grid_enabled=False,
+        window_title=None,
+        window_handle=None,
+        bounds=bounds,
+        annotation_style="raw",
+        ruler_band_size=None,
+        major_grid_size=None,
+        content_origin=None,
+        content_bounds_in_image=None,
+    )
+
+    grid_image, annotation_meta = _draw_grid(
+        image,
+        grid_size=grid_size,
+        offset_x=region["left"],
+        offset_y=region["top"],
+    )
+    _save_image(grid_image, grid_output, image_format="jpeg", jpeg_quality=jpeg_quality)
+    grid_result = CaptureResult(
+        image_path=str(grid_output),
+        target="primary-screen",
+        width=grid_image.width,
+        height=grid_image.height,
+        image_format="jpeg",
+        grid_enabled=True,
+        grid_size=grid_size,
+        window_title=None,
+        window_handle=None,
+        bounds=bounds,
+        annotation_style=str(annotation_meta["annotation_style"]),
+        ruler_band_size=int(annotation_meta["ruler_band_size"]),
+        major_grid_size=int(annotation_meta["major_grid_size"]),
+        content_origin=tuple(annotation_meta["content_origin"]),
+        content_bounds_in_image=tuple(annotation_meta["content_bounds_in_image"]),
+    )
+    return preview_result, grid_result

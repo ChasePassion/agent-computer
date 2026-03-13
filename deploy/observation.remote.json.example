@@ -1,0 +1,9 @@
+{
+  "relay_host": "your-relay-host",
+  "relay_user": "your-ssh-user",
+  "ssh_port": 22,
+  "relay_port": 43768,
+  "local_host": "127.0.0.1",
+  "local_port": 37688,
+  "public_base_url": "http://your-public-host"
+}

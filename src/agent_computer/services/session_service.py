@@ -12,6 +12,9 @@ class SessionService:
         self._started_at = time.time()
         self._last_capture: dict[str, Any] | None = None
         self._last_window: dict[str, Any] | None = None
+        self._observation_frames: dict[str, dict[str, Any]] = {}
+        self._observation_token: str | None = None
+        self._last_observation_cleanup_at: str | None = None
 
     def set_last_capture(self, payload: dict[str, Any]) -> None:
         with self._lock:
@@ -21,12 +24,35 @@ class SessionService:
         with self._lock:
             self._last_window = payload
 
+    def set_observation_token(self, token: str) -> None:
+        with self._lock:
+            self._observation_token = token
+
+    def set_latest_frame(self, mode: str, payload: dict[str, Any]) -> None:
+        with self._lock:
+            self._observation_frames[mode] = payload
+
+    def get_latest_frame(self, mode: str) -> dict[str, Any] | None:
+        with self._lock:
+            frame = self._observation_frames.get(mode)
+            return None if frame is None else dict(frame)
+
+    def set_last_observation_cleanup_at(self, value: str) -> None:
+        with self._lock:
+            self._last_observation_cleanup_at = value
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            preview = self._observation_frames.get("preview")
+            grid = self._observation_frames.get("grid")
             return {
                 "pid": os.getpid(),
                 "started_at": self._started_at,
                 "uptime_seconds": round(max(0.0, time.time() - self._started_at), 3),
                 "last_capture_path": None if not self._last_capture else self._last_capture.get("image_path"),
                 "last_window_title": None if not self._last_window else self._last_window.get("title"),
+                "observation_token_present": self._observation_token is not None,
+                "observation_preview_updated_at": None if preview is None else preview.get("updated_at"),
+                "observation_grid_updated_at": None if grid is None else grid.get("updated_at"),
+                "last_observation_cleanup_at": self._last_observation_cleanup_at,
             }

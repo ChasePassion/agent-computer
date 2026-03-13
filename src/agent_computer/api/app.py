@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from agent_computer.api.routes_actions import router as actions_router
 from agent_computer.api.routes_capture import router as capture_router
 from agent_computer.api.routes_navigation import router as navigation_router
+from agent_computer.api.routes_observation import router as observation_router
 from agent_computer.api.routes_system import router as system_router
 from agent_computer.runtime import ensure_runtime_dirs
 from agent_computer.services import create_service_registry
@@ -18,7 +19,9 @@ def create_app(*, host: str, port: int) -> FastAPI:
     async def lifespan(app: FastAPI):
         ensure_runtime_dirs()
         app.state.registry = create_service_registry()
+        app.state.registry.observation.start()
         yield
+        app.state.registry.observation.stop()
 
     app = FastAPI(title="Agent Computer Daemon", version="0.1.0", lifespan=lifespan)
     app.state.host = host
@@ -28,6 +31,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.include_router(capture_router)
     app.include_router(navigation_router)
     app.include_router(actions_router)
+    app.include_router(observation_router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
