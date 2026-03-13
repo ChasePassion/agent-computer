@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_computer.actions import open_url
+from agent_computer.actions import browser_back, browser_forward, browser_refresh, open_url
 from agent_computer.services.session_service import SessionService
 from agent_computer.windowing import focus_window, list_windows
 
@@ -23,3 +23,15 @@ class NavigationService:
     def open_url(self, *, url: str, restore_clipboard: bool = False) -> dict[str, Any]:
         open_url(url, restore_clipboard=restore_clipboard)
         return {"opened_url": url, "restore_clipboard": restore_clipboard}
+
+    def browser_back(self) -> dict[str, Any]:
+        browser_back()
+        return {"operation": "browser-back", "keys": ["alt", "left"]}
+
+    def browser_forward(self) -> dict[str, Any]:
+        browser_forward()
+        return {"operation": "browser-forward", "keys": ["alt", "right"]}
+
+    def browser_refresh(self) -> dict[str, Any]:
+        browser_refresh()
+        return {"operation": "browser-refresh", "keys": ["ctrl", "r"]}

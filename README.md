@@ -15,13 +15,15 @@
 项目不再内置任何视觉理解模型调用。
 如果需要定位元素，推荐流程是：
 
-1. 先抓整屏网格图
-2. 由 Codex 直接查看网格图并读取当前坐标
-3. 调用点击、滚动、输入等桌面动作
-4. 再次抓整屏网格图，确认状态并顺便读取下一步坐标
-5. 如此循环
+1. 先聚焦目标窗口，并确保目标窗口已经最大化
+2. 再抓整屏网格图
+3. 由 Codex 直接查看网格图并读取当前坐标
+4. 调用点击、滚动、输入等桌面动作
+5. 再次抓整屏网格图，确认状态并顺便读取下一步坐标
+6. 如此循环
 
 只有在网格图看不清楚当前状态时，才额外使用纯净截图做兜底观察。
+如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
 
 ## 1. 创建 conda 环境
 
@@ -68,6 +70,9 @@ pip install -e .
 ```powershell
 agent-computer open-url --url "https://www.zhipin.com/"
 agent-computer open-url --url "https://www.zhipin.com/web/geek/jobs?city=101210100&query=agent%E5%BC%80%E5%8F%91" --restore-clipboard
+agent-computer browser-back
+agent-computer browser-forward
+agent-computer browser-refresh
 ```
 
 这个命令的行为是：
@@ -75,11 +80,15 @@ agent-computer open-url --url "https://www.zhipin.com/web/geek/jobs?city=1012101
 - 发送 `Ctrl+L`
 - 把 URL 放进剪贴板并粘贴
 - 发送 `Enter`
+- `browser-back` 的行为是：`Alt+Left`
+- `browser-forward` 的行为是：`Alt+Right`
+- `browser-refresh` 的行为是：`Ctrl+R`
 
 ### 3.3 网格截图
 
 给 Codex 或人工读取精确坐标用。默认整屏、带绝对坐标网格、高质量 JPEG。
 这也是默认截图方式。
+在执行任何截图前，应先确保目标窗口已经最大化；至少也要保证窗口尺寸在本轮截图到点击之间保持不变。
 
 当前网格的绘制方式是：
 
@@ -97,11 +106,12 @@ agent-computer capture-grid --grid-size 50 --jpeg-quality 90 --output .\artifact
 
 推荐使用方式：
 
-1. `capture-grid`
-2. Codex 查看网格图并读取当前目标坐标
-3. `click` / `scroll` / `paste` / `press`
-4. 再次 `capture-grid` 查看状态并读取下一步坐标
-5. 重复这个循环
+1. 先聚焦目标窗口，并确保目标窗口已经最大化
+2. `capture-grid`
+3. Codex 查看网格图并读取当前目标坐标
+4. `click` / `scroll` / `paste` / `press`
+5. 再次 `capture-grid` 查看状态并读取下一步坐标
+6. 重复这个循环
 
 ### 3.4 预览截图
 
@@ -152,6 +162,9 @@ agent-computer type --text "hello world"
 agent-computer paste --text "agent开发"
 agent-computer paste --text "agent开发" --restore-clipboard
 agent-computer open-url --url "https://www.zhipin.com/"
+agent-computer browser-back
+agent-computer browser-forward
+agent-computer browser-refresh
 agent-computer press --key enter
 agent-computer hotkey ctrl shift s
 ```
@@ -161,6 +174,7 @@ agent-computer hotkey ctrl shift s
 - `type` 适合 ASCII、快捷测试
 - `paste` 更适合中文、长文本、复杂内容
 - `open-url` 适合已知目标页面
+- `browser-back` / `browser-forward` / `browser-refresh` 适合当前活动浏览器窗口
 - `paste` 的行为是：先把指定文本放进 Windows 剪贴板，再发送 `Ctrl+V`
 - `open-url` 的行为是：`Ctrl+L -> paste URL -> Enter`
 
@@ -169,12 +183,13 @@ agent-computer hotkey ctrl shift s
 默认推荐这样组合，而不是依赖一个黑盒流程：
 
 1. 如果目标页面 URL 已知，先用 `open-url`
-2. 用 `capture-grid` 获取当前整屏网格图
-3. 由 Codex 直接查看网格图，读取当前目标坐标
-4. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
-5. 再次 `capture-grid` 查看页面状态，并顺便读取下一步坐标
-6. 按 `capture-grid -> 读坐标 -> 动作 -> capture-grid` 的方式循环推进
-7. 只有当网格图看不清当前状态时，才临时使用 `capture-preview`
+2. 聚焦目标窗口，并确保目标窗口已经最大化
+3. 用 `capture-grid` 获取当前整屏网格图
+4. 由 Codex 直接查看网格图，读取当前目标坐标
+5. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+6. 再次 `capture-grid` 查看页面状态，并顺便读取下一步坐标
+7. 按 `capture-grid -> 读坐标 -> 动作 -> capture-grid` 的方式循环推进
+8. 只有当网格图看不清当前状态时，才临时使用 `capture-preview`
 
 ## 6. 便捷启动
 
@@ -182,6 +197,9 @@ agent-computer hotkey ctrl shift s
 
 ```powershell
 .\run.ps1 open-url --url "https://www.zhipin.com/"
+.\run.ps1 browser-back
+.\run.ps1 browser-forward
+.\run.ps1 browser-refresh
 .\run.ps1 capture-grid --grid-size 50
 .\run.ps1 click --x 500 --y 920
 .\run.ps1 capture-grid --grid-size 50

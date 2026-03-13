@@ -409,6 +409,30 @@ try {
             break
         }
 
+        "browser-back" {
+            if ($commandArgs.Count -gt 0) {
+                throw "browser-back does not accept additional arguments."
+            }
+            Invoke-DaemonRequest -Method POST -Path "/navigation/browser-back"
+            break
+        }
+
+        "browser-forward" {
+            if ($commandArgs.Count -gt 0) {
+                throw "browser-forward does not accept additional arguments."
+            }
+            Invoke-DaemonRequest -Method POST -Path "/navigation/browser-forward"
+            break
+        }
+
+        "browser-refresh" {
+            if ($commandArgs.Count -gt 0) {
+                throw "browser-refresh does not accept additional arguments."
+            }
+            Invoke-DaemonRequest -Method POST -Path "/navigation/browser-refresh"
+            break
+        }
+
         "press" {
             $payload = Parse-Options -CommandArgs $commandArgs `
                 -AliasToKey @{

@@ -108,6 +108,18 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         _print_json(_call(client, method="POST", path="/navigation/open-url", payload=payload))
         return
 
+    if command == "browser-back":
+        _print_json(_call(client, method="POST", path="/navigation/browser-back"))
+        return
+
+    if command == "browser-forward":
+        _print_json(_call(client, method="POST", path="/navigation/browser-forward"))
+        return
+
+    if command == "browser-refresh":
+        _print_json(_call(client, method="POST", path="/navigation/browser-refresh"))
+        return
+
     if command == "press":
         payload = PressRequest(key=args.key).model_dump()
         _print_json(_call(client, method="POST", path="/actions/press", payload=payload))
@@ -251,6 +263,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Restore the previous clipboard text after navigation when possible.",
     )
+
+    subparsers.add_parser("browser-back", help="Navigate the active browser back.")
+    subparsers.add_parser("browser-forward", help="Navigate the active browser forward.")
+    subparsers.add_parser("browser-refresh", help="Refresh the active browser page.")
 
     press_parser = subparsers.add_parser("press", help="Press a single key.")
     press_parser.add_argument("--key", required=True, help="Key name, for example enter or tab.")

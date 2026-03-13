@@ -79,6 +79,18 @@ def open_url(url: str, restore_clipboard: bool = False) -> None:
     pyautogui.press("enter")
 
 
+def browser_back() -> None:
+    pyautogui.hotkey("alt", "left")
+
+
+def browser_forward() -> None:
+    pyautogui.hotkey("alt", "right")
+
+
+def browser_refresh() -> None:
+    pyautogui.hotkey("ctrl", "r")
+
+
 def press_key(key: str) -> None:
     pyautogui.press(key)
 
