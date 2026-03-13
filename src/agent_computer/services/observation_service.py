@@ -64,8 +64,11 @@ class ObservationService:
 
             config_path = observation_token_path()
             if config_path.exists():
-                payload = read_json(config_path)
-                token = str(payload.get("token", "")).strip()
+                try:
+                    payload = read_json(config_path)
+                except (OSError, TypeError, ValueError):
+                    payload = {}
+                token = str(payload.get("token", "")).strip() if isinstance(payload, dict) else ""
                 if self._is_valid_token(token):
                     self._token = token
                     self.session.set_observation_token(token)
