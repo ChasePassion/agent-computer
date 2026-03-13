@@ -89,7 +89,7 @@ agent-computer
 │  ├─ cli.py
 │  ├─ daemon.py
 │  └─ ...
-├─ run.ps1
+├─ windows-launcher.ps1
 └─ docs/dev/phase1/...
 ```
 
@@ -253,7 +253,7 @@ CLI 只做三件事：
 
 - daemon 已运行：直接调用
 - daemon 未运行：可选自动启动并等待 ready
-- `run.ps1` 只调用新 CLI，不再承载逻辑
+- `windows-launcher.ps1` 只调用新 CLI，不再承载逻辑
 
 ## 8. 实施步骤
 

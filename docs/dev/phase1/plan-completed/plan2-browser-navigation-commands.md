@@ -159,9 +159,9 @@
 
 新增根目录脚本调用形式：
 
-- `.\run.ps1 browser-back`
-- `.\run.ps1 browser-forward`
-- `.\run.ps1 browser-refresh`
+- `.\windows-launcher.ps1 browser-back`
+- `.\windows-launcher.ps1 browser-forward`
+- `.\windows-launcher.ps1 browser-refresh`
 
 ## 7. 代码落点
 
@@ -247,9 +247,9 @@ v1 不新增请求模型。
 
 文件：
 
-- `run.ps1`
+- `windows-launcher.ps1`
 
-在命令分发里新增三个 case：
+launcher 只需要保证这些命令可以原样透传：
 
 - `browser-back`
 - `browser-forward`
@@ -298,9 +298,9 @@ v1 不新增请求模型。
 - `browser-forward`
 - `browser-refresh`
 
-### Step 5: `run.ps1` 暴露
+### Step 5: `windows-launcher.ps1` 透传
 
-在 `run.ps1` 中新增对应命令分发。
+在 `windows-launcher.ps1` 中不新增第二套命令实现，只负责透传到正式 CLI。
 
 ### Step 6: 文档更新
 
@@ -310,15 +310,15 @@ v1 不新增请求模型。
 
 手工验证以下场景：
 
-1. Chrome 前台执行 `.\run.ps1 browser-back`
-2. Chrome 前台执行 `.\run.ps1 browser-forward`
-3. Chrome 前台执行 `.\run.ps1 browser-refresh`
+1. Chrome 前台执行 `.\windows-launcher.ps1 browser-back`
+2. Chrome 前台执行 `.\windows-launcher.ps1 browser-forward`
+3. Chrome 前台执行 `.\windows-launcher.ps1 browser-refresh`
 
 ## 9. 验收标准
 
 满足以下条件即视为完成：
 
-1. 三个命令在 CLI、daemon API、`run.ps1` 三层都可用
+1. 三个命令在 CLI、daemon API 可用，`windows-launcher.ps1` 可无额外解析地透传调用
 2. 返回结构化 JSON
 3. README 中有明确示例
 
@@ -343,10 +343,10 @@ v1 不新增请求模型。
 README 建议增加的示例：
 
 ```powershell
-.\run.ps1 focus --title "Google Chrome"
-.\run.ps1 browser-back
-.\run.ps1 browser-forward
-.\run.ps1 browser-refresh
+.\windows-launcher.ps1 focus --title "Google Chrome"
+.\windows-launcher.ps1 browser-back
+.\windows-launcher.ps1 browser-forward
+.\windows-launcher.ps1 browser-refresh
 ```
 
 ## 12. 结论

@@ -8,7 +8,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
 Write-Host "Starting agent-computer daemon for observation on $BindHost`:$Port ..."
-& .\run.ps1 daemon start --host $BindHost --port $Port
+& .\windows-launcher.ps1 daemon start --host $BindHost --port $Port
 
 Write-Host ""
 Write-Host "Observation daemon started."

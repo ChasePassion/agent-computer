@@ -196,22 +196,26 @@ agent-computer hotkey ctrl shift s
 
 ## 6. 便捷启动
 
-项目根目录自带一个包装脚本：
+项目根目录自带一个 Windows launcher：
 
 ```powershell
-.\run.ps1 open-url --url "https://www.zhipin.com/"
-.\run.ps1 browser-back
-.\run.ps1 browser-forward
-.\run.ps1 browser-refresh
-.\run.ps1 capture-grid --grid-size 50
-.\run.ps1 click --x 500 --y 920
-.\run.ps1 capture-grid --grid-size 50
-.\run.ps1 capture-preview
+.\windows-launcher.ps1 open-url --url "https://www.zhipin.com/"
+.\windows-launcher.ps1 browser-back
+.\windows-launcher.ps1 browser-forward
+.\windows-launcher.ps1 browser-refresh
+.\windows-launcher.ps1 capture-grid --grid-size 50
+.\windows-launcher.ps1 click --x 500 --y 920
+.\windows-launcher.ps1 capture-grid --grid-size 50
+.\windows-launcher.ps1 capture-preview
 ```
 
-现在 `.\run.ps1` 会优先直接请求本地 daemon HTTP 接口，而不是每次都重新启动 Python CLI。
-这能显著减少 `click`、`focus`、`capture-preview`、`open-url` 这类高频原子动作的单次开销。
-`daemon start/status/stop/run` 仍然复用原有 Python 入口。
+现在三层职责明确：
+
+- `agent-computer-daemon` 是核心常驻进程
+- `agent-computer` 是正式 CLI 入口
+- `.\windows-launcher.ps1` 只负责定位 Windows 本地环境、确保 daemon ready，并把命令转发给正式 CLI
+
+也就是说，`.\windows-launcher.ps1` 不再维护第二套命令定义或参数默认值。
 
 ## 7. Observation Layer
 
