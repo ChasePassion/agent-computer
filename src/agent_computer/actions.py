@@ -9,6 +9,11 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.15
 
 
+def mouse_position() -> tuple[int, int]:
+    point = pyautogui.position()
+    return int(point.x), int(point.y)
+
+
 def move_to(x: int, y: int, duration: float = 0.0) -> None:
     pyautogui.moveTo(x=x, y=y, duration=duration)
 

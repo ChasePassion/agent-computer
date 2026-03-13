@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from agent_computer.actions import mouse_position
 from agent_computer.client import DaemonClient
 from agent_computer.daemon import main as daemon_main
 from agent_computer.models.requests import (
@@ -44,12 +45,14 @@ def _print_observation_urls(payload: dict[str, Any]) -> None:
     print(f"  Human Live: {payload['human_default_url']}")
     print(f"  Model Image: {payload['model_default_image_url']}")
     print(f"  Model Meta: {payload['model_default_meta_url']}")
+    print(f"  Model Mouse: {payload['model_mouse_url']}")
     print("")
     print("Local:")
     print(f"  Live: {payload['human_live_url']}")
     print(f"  Preview Image: {payload['human_preview_url']}")
     print(f"  Grid Image: {payload['human_grid_url']}")
     print(f"  Grid Meta: {payload['model_default_meta_url']}")
+    print(f"  Mouse: {payload['model_mouse_url']}")
 
     public_bundle = payload.get("public")
     if isinstance(public_bundle, dict):
@@ -59,6 +62,7 @@ def _print_observation_urls(payload: dict[str, Any]) -> None:
         print(f"  Preview Image: {payload['public_human_preview_url']}")
         print(f"  Grid Image: {payload['public_human_grid_url']}")
         print(f"  Grid Meta: {payload['public_model_default_meta_url']}")
+        print(f"  Mouse: {payload['public_model_mouse_url']}")
 
 
 def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
@@ -187,9 +191,8 @@ def _handle_daemon(args: argparse.Namespace) -> None:
 
 
 def _handle_observation(args: argparse.Namespace) -> None:
-    client = DaemonClient(host=args.host, port=args.port)
-
     if args.observation_command == "urls":
+        client = DaemonClient(host=args.host, port=args.port)
         client.ensure_running()
         token_payload = read_json(observation_token_path())
         token = str(token_payload.get("token", "")).strip() if isinstance(token_payload, dict) else ""
@@ -200,6 +203,20 @@ def _handle_observation(args: argparse.Namespace) -> None:
             _print_json(payload)
         else:
             _print_observation_urls(payload)
+        return
+
+    if args.observation_command == "mouse":
+        x, y = mouse_position()
+        payload = {
+            "x": x,
+            "y": y,
+            "coordinate_system": "screen-absolute-grid",
+            "origin": [0, 0],
+        }
+        if args.json:
+            _print_json(payload)
+        else:
+            print(f"Mouse: ({x}, {y}) [screen-absolute-grid]")
         return
 
     raise RuntimeError(f"Unsupported command: {args.observation_command}")
@@ -322,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
     observation_urls_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
     observation_urls_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
     observation_urls_parser.add_argument("--json", action="store_true", help="Print URLs as JSON.")
+    observation_mouse_parser = observation_subparsers.add_parser(
+        "mouse",
+        help="Print the current mouse position in the grid coordinate system.",
+    )
+    observation_mouse_parser.add_argument("--json", action="store_true", help="Print the mouse position as JSON.")
 
     daemon_parser = subparsers.add_parser("daemon", help="Manage the local agent-computer daemon.")
     daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command", required=True)

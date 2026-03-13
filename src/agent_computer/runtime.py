@@ -121,6 +121,7 @@ def _observation_url_bundle(*, base_url: str, token: str) -> dict[str, str]:
     return {
         "base_url": normalized_base_url,
         "live_url": f"{normalized_base_url}/live?token={token}",
+        "mouse_url": f"{normalized_base_url}/observation/mouse.json?token={token}",
         "preview_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=preview",
         "preview_meta_url": f"{normalized_base_url}/observation/latest.json?token={token}&mode=preview",
         "grid_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=grid",
@@ -145,6 +146,7 @@ def build_observation_urls_manifest(
             "human_live_url": local["live_url"],
             "model_image_url": local["grid_image_url"],
             "model_meta_url": local["grid_meta_url"],
+            "model_mouse_url": local["mouse_url"],
         },
         "local": local,
         "human_default_url": local["live_url"],
@@ -153,6 +155,7 @@ def build_observation_urls_manifest(
         "human_grid_url": local["grid_image_url"],
         "model_default_image_url": local["grid_image_url"],
         "model_default_meta_url": local["grid_meta_url"],
+        "model_mouse_url": local["mouse_url"],
         "model_preview_image_url": local["preview_image_url"],
         "model_preview_meta_url": local["preview_meta_url"],
     }
@@ -165,6 +168,7 @@ def build_observation_urls_manifest(
         manifest["public_human_grid_url"] = public["grid_image_url"]
         manifest["public_model_default_image_url"] = public["grid_image_url"]
         manifest["public_model_default_meta_url"] = public["grid_meta_url"]
+        manifest["public_model_mouse_url"] = public["mouse_url"]
 
     return manifest
 

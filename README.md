@@ -26,6 +26,11 @@
 只有在 latest image 看不清楚当前状态、或你需要冻结一张更高确定性的静态图时，才额外使用手动截图做兜底观察。
 如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
 
+补充约束：
+
+- 如果目标站点的操作手册已经给出了目标信息，以手册为准
+- 当操作没有出现预期行为的时候，首先应该认为是自己的定位不准确
+
 ## 1. 创建 conda 环境
 
 ```powershell
@@ -104,17 +109,21 @@ Observation Layer 是默认观察入口，不需要每一步都手动抓图。
 3. Human 用 `human_live_url`
 4. Model 用 `model_default_image_url`
 5. 如需确认 freshness，再读 `model_default_meta_url`
+6. 如需读取当前鼠标坐标，优先读 `model_mouse_url`
 
 也就是说：
 
 - `/live` 是 Human console
 - latest grid image 是 Model default
+- `latest.json` 会返回与当前 frame 对齐的 `mouse_position`
+- `/observation/mouse.json` 提供当前鼠标的即时坐标
 - 手动截图是强化手段，不是默认入口
 
 ```powershell
 .\windows-launcher.ps1 observation urls
 .\windows-launcher.ps1 observation urls --json
 agent-computer observation urls --json
+agent-computer observation mouse --json
 ```
 
 ### 3.4 网格截图
@@ -219,10 +228,11 @@ agent-computer hotkey ctrl shift s
 3. 用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
 4. Model 默认读取 `model_default_image_url`，也就是 latest grid image
 5. 如需确认 freshness，再读取 `model_default_meta_url`
-6. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
-7. 再次读取 latest grid image，并顺便读取下一步坐标
-8. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
-9. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
+6. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
+7. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+8. 再次读取 latest grid image，并顺便读取下一步坐标
+9. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
+10. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
 ## 6. 便捷启动
 
@@ -269,6 +279,10 @@ manifest 位于：
 
 - `.agent\observation.urls.json`
 
+站点手册：
+
+- `BOSS_ZHIPIN_AGENT_MANUAL.md`
+
 核心访问路径：
 
 ```text
@@ -276,6 +290,7 @@ manifest 位于：
 /observation/latest.jpg?token=<TOKEN>&mode=preview
 /observation/latest.jpg?token=<TOKEN>&mode=grid
 /observation/latest.json?token=<TOKEN>&mode=grid
+/observation/mouse.json?token=<TOKEN>
 ```
 
 默认角色分工：
@@ -283,12 +298,15 @@ manifest 位于：
 - Human 默认看 `/live`
 - Model 默认看 `latest.jpg?mode=grid`
 - `latest.json?mode=grid` 用于 freshness / frame meta
+- `latest.json?mode=grid` 中的 `mouse_position` 与当前 frame 对齐
+- `/observation/mouse.json` 用于读取当前鼠标即时坐标
 - `capture-preview` / `capture-grid` 只用于强化观察
 
 推荐拿 URL 的方式：
 
 ```powershell
 agent-computer observation urls --json
+agent-computer observation mouse --json
 .\windows-launcher.ps1 observation urls --json
 .\scripts\show_observation_urls.ps1
 ```

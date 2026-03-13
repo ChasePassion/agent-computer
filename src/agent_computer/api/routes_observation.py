@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from agent_computer.actions import mouse_position
 from agent_computer.api.deps import get_registry
 from agent_computer.services.registry import ServiceRegistry
 
@@ -111,6 +112,7 @@ def live_page(
       <span>Mode: <strong id="mode-label">{initial_mode}</strong></span>
       <span>Updated: <strong id="updated-label">warming up</strong></span>
       <span>Resolution: <strong id="resolution-label">-</strong></span>
+      <span>Cursor: <strong id="cursor-label">-</strong></span>
     </div>
     <div class="controls">
       <button id="preview-btn">Preview</button>
@@ -128,6 +130,7 @@ def live_page(
     const modeLabel = document.getElementById("mode-label");
     const updatedLabel = document.getElementById("updated-label");
     const resolutionLabel = document.getElementById("resolution-label");
+    const cursorLabel = document.getElementById("cursor-label");
     const previewBtn = document.getElementById("preview-btn");
     const gridBtn = document.getElementById("grid-btn");
 
@@ -150,12 +153,15 @@ def live_page(
         const payload = await response.json();
         updatedLabel.textContent = payload.updated_at || "-";
         resolutionLabel.textContent = `${{payload.desktop_width || payload.width}}x${{payload.desktop_height || payload.height}}`;
+        const cursor = payload.mouse_position;
+        cursorLabel.textContent = cursor ? `(${{cursor.x}}, ${{cursor.y}})` : "-";
         if (payload.frame_seq !== lastFrameSeq) {{
           frame.src = `${{payload.image_url}}&ts=${{Date.now()}}`;
           lastFrameSeq = payload.frame_seq;
         }}
       }} catch (error) {{
         updatedLabel.textContent = "waiting";
+        cursorLabel.textContent = "-";
       }}
     }}
 
@@ -221,3 +227,17 @@ def latest_json(
     response_payload = dict(payload)
     response_payload["image_url"] = image_url
     return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@router.get("/observation/mouse.json")
+def mouse_json(
+    _: str = Depends(_require_token),
+) -> JSONResponse:
+    x, y = mouse_position()
+    payload = {
+        "x": x,
+        "y": y,
+        "coordinate_system": "screen-absolute-grid",
+        "origin": [0, 0],
+    }
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from agent_computer.actions import mouse_position
 from agent_computer.capture import capture_observation_pair
 from agent_computer.runtime import (
     DEFAULT_OBSERVATION_GRID_SIZE,
@@ -150,8 +151,23 @@ class ObservationService:
 
         self._frame_seq += 1
         updated_at = self._now_iso()
-        preview_payload = self._build_payload("preview", preview_result.to_dict(), preview_target, updated_at)
-        grid_payload = self._build_payload("grid", grid_result.to_dict(), grid_target, updated_at)
+        cursor_x, cursor_y = mouse_position()
+        preview_payload = self._build_payload(
+            "preview",
+            preview_result.to_dict(),
+            preview_target,
+            updated_at,
+            cursor_x=cursor_x,
+            cursor_y=cursor_y,
+        )
+        grid_payload = self._build_payload(
+            "grid",
+            grid_result.to_dict(),
+            grid_target,
+            updated_at,
+            cursor_x=cursor_x,
+            cursor_y=cursor_y,
+        )
 
         self._write_latest_meta(preview_payload)
         self._write_latest_meta(grid_payload)
@@ -185,6 +201,9 @@ class ObservationService:
         payload: dict[str, Any],
         image_path: Path,
         updated_at: str,
+        *,
+        cursor_x: int,
+        cursor_y: int,
     ) -> dict[str, Any]:
         bounds = payload.get("bounds") or [0, 0, payload.get("width", 0), payload.get("height", 0)]
         desktop_width = max(0, int(bounds[2]) - int(bounds[0]))
@@ -196,6 +215,11 @@ class ObservationService:
         payload["content_type"] = "image/jpeg"
         payload["desktop_width"] = desktop_width
         payload["desktop_height"] = desktop_height
+        payload["mouse_position"] = {
+            "x": cursor_x,
+            "y": cursor_y,
+            "coordinate_system": "screen-absolute-grid",
+        }
         return payload
 
     def _write_latest_meta(self, payload: dict[str, Any]) -> None:
