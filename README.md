@@ -30,7 +30,9 @@
 
 - 如果目标站点的操作手册已经给出了目标信息，以手册为准
 - 当操作没有出现预期行为的时候，首先应该认为是自己的定位不准确
+- 在点击之后没有出现预期结果时，先获取当前鼠标坐标信息，再对照最新网格图片复核，优先排查是否因为坐标偏差导致点击没有落在目标上
 - 每次对目标开始操作之前，首先阅读相关的 skill / 操作手册
+- 思考一切可行办法去完成用户的需求；在用户需求被完成之前，不要因为单次失败、页面异常或路径不顺手就停止
 - 当实际操作时出现“操作手册中不存在的行为 -> 结果映射”时，需要把新映射追加到对应手册中
 - 追加手册时，至少记录当时的 URL、鼠标坐标、触发动作和页面反馈
 
@@ -77,8 +79,9 @@ pip install -e .
 如果当前活动窗口已经是浏览器，推荐直接用：
 
 ```powershell
-agent-computer open-url --url "https://www.zhipin.com/"
-agent-computer open-url --url "https://www.zhipin.com/web/geek/jobs?city=101210100&query=agent%E5%BC%80%E5%8F%91" --restore-clipboard
+agent-computer browser-open-url --url "https://www.zhipin.com/"
+agent-computer browser-open-url --url "https://www.zhipin.com/web/geek/jobs?city=101210100&query=agent%E5%BC%80%E5%8F%91" --restore-clipboard
+agent-computer browser-current-url
 agent-computer browser-back
 agent-computer browser-forward
 agent-computer browser-refresh
@@ -89,6 +92,7 @@ agent-computer browser-refresh
 - 发送 `Ctrl+L`
 - 把 URL 放进剪贴板并粘贴
 - 发送 `Enter`
+- `browser-current-url` 的行为是：校验前台窗口是浏览器，再执行 `Ctrl+L -> Ctrl+C -> Esc` 读取当前地址栏 URL
 - `browser-back` 的行为是：`Alt+Left`
 - `browser-forward` 的行为是：`Alt+Right`
 - `browser-refresh` 的行为是：`Ctrl+R`
@@ -206,7 +210,7 @@ agent-computer scroll --amount -500
 agent-computer type --text "hello world"
 agent-computer paste --text "agent开发"
 agent-computer paste --text "agent开发" --restore-clipboard
-agent-computer open-url --url "https://www.zhipin.com/"
+agent-computer browser-open-url --url "https://www.zhipin.com/"
 agent-computer browser-back
 agent-computer browser-forward
 agent-computer browser-refresh
@@ -218,16 +222,17 @@ agent-computer hotkey ctrl shift s
 
 - `type` 适合 ASCII、快捷测试
 - `paste` 更适合中文、长文本、复杂内容
-- `open-url` 适合已知目标页面
+- `browser-open-url` 适合已知目标页面
+- `browser-current-url` 适合确认当前浏览器真实落点
 - `browser-back` / `browser-forward` / `browser-refresh` 适合当前活动浏览器窗口
 - `paste` 的行为是：先把指定文本放进 Windows 剪贴板，再发送 `Ctrl+V`
-- `open-url` 的行为是：`Ctrl+L -> paste URL -> Enter`
+- `browser-open-url` 的行为是：`Ctrl+L -> Ctrl+A -> paste URL -> Enter`
 
 ## 5. 推荐给 Codex 的使用方式
 
 默认推荐这样组合，而不是依赖手动截图主导的流程：
 
-1. 如果目标页面 URL 已知，先用 `open-url`
+1. 如果目标页面 URL 已知，先用 `browser-open-url`
 2. 聚焦目标窗口，并确保目标窗口已经最大化
    推荐顺序：先 `focus`，再 `maximize`
 3. 开始操作之前，先阅读相关的 skill / 操作手册
@@ -235,18 +240,21 @@ agent-computer hotkey ctrl shift s
 5. Model 默认读取 `model_default_image_url`，也就是 latest grid image
 6. 如需确认 freshness，再读取 `model_default_meta_url`
 7. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
-8. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+8. 用 `click`、`scroll`、`paste`、`browser-open-url` 等原子动作执行业务步骤
 9. 再次读取 latest grid image，并顺便读取下一步坐标
-10. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
-11. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
-12. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
+10. 如果点击之后没有出现预期结果，先读取当前鼠标坐标，并和 latest grid image 对照，优先确认是否存在坐标偏差
+11. 不要因为一次点击失败或页面异常就停止，继续思考并尝试其他可行路径，直到用户需求完成
+12. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
+13. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
+14. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
 ## 6. 便捷启动
 
 项目根目录自带一个 Windows launcher：
 
 ```powershell
-.\windows-launcher.ps1 open-url --url "https://www.zhipin.com/"
+.\windows-launcher.ps1 browser-open-url --url "https://www.zhipin.com/"
+.\windows-launcher.ps1 browser-current-url
 .\windows-launcher.ps1 browser-back
 .\windows-launcher.ps1 browser-forward
 .\windows-launcher.ps1 browser-refresh

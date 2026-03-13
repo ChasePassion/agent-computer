@@ -10,6 +10,7 @@ from agent_computer.actions import mouse_position
 from agent_computer.client import DaemonClient
 from agent_computer.daemon import main as daemon_main
 from agent_computer.models.requests import (
+    BrowserOpenUrlRequest,
     CaptureGridRequest,
     CapturePreviewRequest,
     CaptureRequest,
@@ -18,7 +19,6 @@ from agent_computer.models.requests import (
     HotkeyRequest,
     MaximizeRequest,
     MoveRequest,
-    OpenUrlRequest,
     PasteRequest,
     PressRequest,
     ScrollRequest,
@@ -136,9 +136,13 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         _print_json(_call(client, method="POST", path="/actions/paste", payload=payload))
         return
 
-    if command == "open-url":
-        payload = OpenUrlRequest(url=args.url, restore_clipboard=args.restore_clipboard).model_dump()
-        _print_json(_call(client, method="POST", path="/navigation/open-url", payload=payload))
+    if command == "browser-open-url":
+        payload = BrowserOpenUrlRequest(url=args.url, restore_clipboard=args.restore_clipboard).model_dump()
+        _print_json(_call(client, method="POST", path="/navigation/browser-open-url", payload=payload))
+        return
+
+    if command == "browser-current-url":
+        _print_json(_call(client, method="POST", path="/navigation/browser-current-url"))
         return
 
     if command == "browser-back":
@@ -322,17 +326,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restore the previous clipboard text after pasting when possible.",
     )
 
-    open_url_parser = subparsers.add_parser(
-        "open-url",
+    browser_open_url_parser = subparsers.add_parser(
+        "browser-open-url",
         help="Focus the browser address bar, paste a URL, and press Enter.",
     )
-    open_url_parser.add_argument("--url", required=True, help="URL to open in the active browser window.")
-    open_url_parser.add_argument(
+    browser_open_url_parser.add_argument("--url", required=True, help="URL to open in the active browser window.")
+    browser_open_url_parser.add_argument(
         "--restore-clipboard",
         action="store_true",
         help="Restore the previous clipboard text after navigation when possible.",
     )
 
+    subparsers.add_parser("browser-current-url", help="Read the current URL from the active browser tab.")
     subparsers.add_parser("browser-back", help="Navigate the active browser back.")
     subparsers.add_parser("browser-forward", help="Navigate the active browser forward.")
     subparsers.add_parser("browser-refresh", help="Refresh the active browser page.")

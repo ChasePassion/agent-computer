@@ -63,7 +63,7 @@ class PasteRequest(BaseModel):
     restore_clipboard: bool = False
 
 
-class OpenUrlRequest(BaseModel):
+class BrowserOpenUrlRequest(BaseModel):
     url: str
     restore_clipboard: bool = False
 

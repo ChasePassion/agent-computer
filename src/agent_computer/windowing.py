@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import time
 from dataclasses import asdict, dataclass
 
+import win32api
 import win32con
 import win32gui
+import win32process
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
+
+BROWSER_PROCESS_NAMES = {
+    "brave.exe",
+    "chrome.exe",
+    "firefox.exe",
+    "msedge.exe",
+    "opera.exe",
+    "vivaldi.exe",
+}
 
 
 @dataclass
@@ -26,6 +38,35 @@ class WindowInfo:
 
 def _window_text(hwnd: int) -> str:
     return win32gui.GetWindowText(hwnd).strip()
+
+
+def _window_process_details(hwnd: int) -> dict[str, object]:
+    _, process_id = win32process.GetWindowThreadProcessId(hwnd)
+    process_handle = None
+    process_path = None
+    process_name = None
+
+    try:
+        process_handle = win32api.OpenProcess(
+            win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ,
+            False,
+            process_id,
+        )
+        process_path = win32process.GetModuleFileNameEx(process_handle, 0) or None
+        if process_path:
+            process_name = os.path.basename(process_path).casefold()
+    except Exception:
+        process_path = None
+        process_name = None
+    finally:
+        if process_handle is not None:
+            win32api.CloseHandle(process_handle)
+
+    return {
+        "process_id": int(process_id),
+        "process_path": process_path,
+        "process_name": process_name,
+    }
 
 
 def _window_info_from_hwnd(hwnd: int, *, foreground: int | None = None) -> WindowInfo:
@@ -162,3 +203,26 @@ def maximize_window(title_query: str, exact: bool = False, *, timeout_sec: float
     payload = _window_state_payload(hwnd)
     payload["operation"] = "maximize"
     raise RuntimeError(f"Window did not enter maximized state: {payload['title']}")
+
+
+def foreground_window_details() -> dict[str, object]:
+    hwnd = win32gui.GetForegroundWindow()
+    if not hwnd:
+        raise RuntimeError("No foreground window is active.")
+
+    info = _window_info_from_hwnd(hwnd)
+    return {
+        **info.to_dict(),
+        **_window_process_details(hwnd),
+    }
+
+
+def require_foreground_browser_window() -> dict[str, object]:
+    payload = foreground_window_details()
+    process_name = str(payload.get("process_name") or "").casefold()
+    if process_name not in BROWSER_PROCESS_NAMES:
+        title = str(payload.get("title") or "").strip() or "<untitled>"
+        raise RuntimeError(
+            f"Foreground window is not a supported browser: title={title!r}, process={process_name or 'unknown'}"
+        )
+    return payload

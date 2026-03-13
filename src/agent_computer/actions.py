@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from urllib.parse import urlparse
 
 import pyautogui
 import win32clipboard
@@ -76,12 +77,41 @@ def paste_text(text: str, restore_clipboard: bool = False) -> None:
         _set_clipboard_text(previous_text)
 
 
-def open_url(url: str, restore_clipboard: bool = False) -> None:
+def browser_open_url(url: str, restore_clipboard: bool = False) -> None:
     pyautogui.hotkey("ctrl", "l")
+    time.sleep(0.05)
+    pyautogui.hotkey("ctrl", "a")
     time.sleep(0.05)
     paste_text(url, restore_clipboard=restore_clipboard)
     time.sleep(0.05)
     pyautogui.press("enter")
+
+
+def browser_current_url(*, restore_clipboard: bool = True) -> str:
+    previous_text = _get_clipboard_text() if restore_clipboard else None
+    sentinel = f"agent-computer-browser-url-{time.time_ns()}"
+
+    _set_clipboard_text(sentinel)
+    time.sleep(0.05)
+    pyautogui.hotkey("ctrl", "l")
+    time.sleep(0.05)
+    pyautogui.hotkey("ctrl", "c")
+    time.sleep(0.05)
+    copied_text = (_get_clipboard_text() or "").strip()
+    pyautogui.press("esc")
+
+    if restore_clipboard and previous_text is not None:
+        time.sleep(0.05)
+        _set_clipboard_text(previous_text)
+
+    if not copied_text or copied_text == sentinel:
+        raise RuntimeError("Unable to read the current browser URL from the address bar.")
+
+    parsed = urlparse(copied_text)
+    if not parsed.scheme:
+        raise RuntimeError(f"Clipboard did not contain a valid browser URL: {copied_text!r}")
+
+    return copied_text
 
 
 def browser_back() -> None:
