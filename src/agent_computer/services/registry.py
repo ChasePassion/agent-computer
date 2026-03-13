@@ -20,12 +20,12 @@ class ServiceRegistry:
     execution_lock: threading.RLock = field(default_factory=threading.RLock)
 
 
-def create_service_registry() -> ServiceRegistry:
+def create_service_registry(*, host: str, port: int) -> ServiceRegistry:
     session = SessionService()
     capture = CaptureService(session)
     actions = ActionService()
     navigation = NavigationService(session)
-    observation = ObservationService(session)
+    observation = ObservationService(session, host=host, port=port)
     return ServiceRegistry(
         session=session,
         capture=capture,

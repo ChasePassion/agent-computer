@@ -78,6 +78,11 @@ def observation_remote_config_path() -> Path:
     return AGENT_DIR / "observation.remote.json"
 
 
+def observation_urls_path() -> Path:
+    ensure_runtime_dirs()
+    return AGENT_DIR / "observation.urls.json"
+
+
 def preview_latest_path() -> Path:
     ensure_runtime_dirs()
     return OBSERVATION_DIR / "preview_latest.jpg"
@@ -86,3 +91,96 @@ def preview_latest_path() -> Path:
 def grid_latest_path() -> Path:
     ensure_runtime_dirs()
     return OBSERVATION_DIR / "grid_latest.jpg"
+
+
+def _normalize_base_url(value: str) -> str:
+    return value.strip().rstrip("/")
+
+
+def _read_public_base_url() -> str | None:
+    if DEFAULT_OBSERVATION_PUBLIC_BASE_URL:
+        return _normalize_base_url(DEFAULT_OBSERVATION_PUBLIC_BASE_URL)
+
+    config_path = observation_remote_config_path()
+    if not config_path.exists():
+        return None
+
+    try:
+        payload = read_json(config_path)
+    except (OSError, TypeError, ValueError):
+        return None
+
+    public_base_url = str(payload.get("public_base_url", "")).strip() if isinstance(payload, dict) else ""
+    if not public_base_url:
+        return None
+    return _normalize_base_url(public_base_url)
+
+
+def _observation_url_bundle(*, base_url: str, token: str) -> dict[str, str]:
+    normalized_base_url = _normalize_base_url(base_url)
+    return {
+        "base_url": normalized_base_url,
+        "live_url": f"{normalized_base_url}/live?token={token}",
+        "preview_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=preview",
+        "preview_meta_url": f"{normalized_base_url}/observation/latest.json?token={token}&mode=preview",
+        "grid_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=grid",
+        "grid_meta_url": f"{normalized_base_url}/observation/latest.json?token={token}&mode=grid",
+    }
+
+
+def build_observation_urls_manifest(
+    *,
+    token: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    public_base_url: str | None = None,
+) -> dict[str, Any]:
+    local = _observation_url_bundle(base_url=daemon_base_url(host, port), token=token)
+    public_base = _normalize_base_url(public_base_url) if public_base_url else _read_public_base_url()
+
+    manifest: dict[str, Any] = {
+        "token": token,
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "defaults": {
+            "human_live_url": local["live_url"],
+            "model_image_url": local["grid_image_url"],
+            "model_meta_url": local["grid_meta_url"],
+        },
+        "local": local,
+        "human_default_url": local["live_url"],
+        "human_live_url": local["live_url"],
+        "human_preview_url": local["preview_image_url"],
+        "human_grid_url": local["grid_image_url"],
+        "model_default_image_url": local["grid_image_url"],
+        "model_default_meta_url": local["grid_meta_url"],
+        "model_preview_image_url": local["preview_image_url"],
+        "model_preview_meta_url": local["preview_meta_url"],
+    }
+
+    if public_base:
+        public = _observation_url_bundle(base_url=public_base, token=token)
+        manifest["public"] = public
+        manifest["public_human_live_url"] = public["live_url"]
+        manifest["public_human_preview_url"] = public["preview_image_url"]
+        manifest["public_human_grid_url"] = public["grid_image_url"]
+        manifest["public_model_default_image_url"] = public["grid_image_url"]
+        manifest["public_model_default_meta_url"] = public["grid_meta_url"]
+
+    return manifest
+
+
+def write_observation_urls_manifest(
+    *,
+    token: str,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    public_base_url: str | None = None,
+) -> dict[str, Any]:
+    payload = build_observation_urls_manifest(
+        token=token,
+        host=host,
+        port=port,
+        public_base_url=public_base_url,
+    )
+    write_json(observation_urls_path(), payload)
+    return payload

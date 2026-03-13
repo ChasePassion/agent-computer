@@ -18,7 +18,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         ensure_runtime_dirs()
-        app.state.registry = create_service_registry()
+        app.state.registry = create_service_registry(host=host, port=port)
         app.state.registry.observation.start()
         yield
         app.state.registry.observation.stop()

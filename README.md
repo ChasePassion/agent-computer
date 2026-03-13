@@ -2,8 +2,9 @@
 
 一个给 Codex 直接调用的 Windows 桌面原子工具集。
 
-现在它只保留纯桌面控制与截图能力：
+现在它只保留纯桌面控制、Observation latest 与截图强化能力：
 
+- Observation latest preview / grid
 - 绝对坐标网格截图
 - 轻量预览截图
 - 通用截图
@@ -15,14 +16,14 @@
 项目不再内置任何视觉理解模型调用。
 如果需要定位元素，推荐流程是：
 
-1. 先聚焦目标窗口，并确保目标窗口已经最大化
-2. 再抓整屏网格图
-3. 由 Codex 直接查看网格图并读取当前坐标
+1. 先确保 daemon 与 Observation Layer 已启动
+2. Human 默认看 `/live` 或 latest preview
+3. Model 默认取 latest grid image，而不是直接看 `/live` 网页
 4. 调用点击、滚动、输入等桌面动作
-5. 再次抓整屏网格图，确认状态并顺便读取下一步坐标
+5. 再读取最新的 latest grid image，确认状态并顺便读取下一步坐标
 6. 如此循环
 
-只有在网格图看不清楚当前状态时，才额外使用纯净截图做兜底观察。
+只有在 latest image 看不清楚当前状态、或你需要冻结一张更高确定性的静态图时，才额外使用手动截图做兜底观察。
 如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
 
 ## 1. 创建 conda 环境
@@ -56,7 +57,7 @@ pip install -e .
 
 1. 能拿到可靠 URL：优先直接打开 URL
 2. 拿不到 URL，但能构造稳定 URL：优先直接构造并打开
-3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `capture-grid -> 读坐标 -> click -> capture-grid -> ...`
+3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `latest grid image -> 读坐标 -> click -> latest grid image -> ...`
 
 也就是说：
 
@@ -85,12 +86,41 @@ agent-computer browser-refresh
 - `browser-refresh` 的行为是：`Ctrl+R`
 - 在操作浏览器网页时，如果误触进入了同一网站的下一个页面，可以直接使用 `browser-back` 返回
 - 一般情况下，执行 `browser-back` 之后，可以默认浏览器已经回到上一个页面，并继续使用上一张 frame 推进，而不需要立刻重新查看当前页面
-- 例外是会实时变化的网页；这类页面在执行 `browser-back` 之后，仍然建议重新截图确认当前状态
+- 例外是会实时变化的网页；这类页面在执行 `browser-back` 之后，仍然建议重新读取 latest image 确认当前状态
 
-### 3.3 网格截图
+### 3.3 Observation latest（默认）
+
+Observation Layer 是默认观察入口，不需要每一步都手动抓图。
+
+- Human 默认入口：`/live?token=<TOKEN>`
+- Model 默认入口：`/observation/latest.jpg?token=<TOKEN>&mode=grid`
+- Model 默认元数据：`/observation/latest.json?token=<TOKEN>&mode=grid`
+- latest preview 仍然保留给 Human 做纯净观察
+
+推荐读取顺序：
+
+1. 启动 daemon
+2. 取 `.agent\observation.urls.json`
+3. Human 用 `human_live_url`
+4. Model 用 `model_default_image_url`
+5. 如需确认 freshness，再读 `model_default_meta_url`
+
+也就是说：
+
+- `/live` 是 Human console
+- latest grid image 是 Model default
+- 手动截图是强化手段，不是默认入口
+
+```powershell
+.\windows-launcher.ps1 observation urls
+.\windows-launcher.ps1 observation urls --json
+agent-computer observation urls --json
+```
+
+### 3.4 网格截图
 
 给 Codex 或人工读取精确坐标用。默认整屏、带绝对坐标网格、高质量 JPEG。
-这也是默认截图方式。
+这是手动冻结一张高精度坐标图的方式，不再是默认观察入口。
 在执行任何截图前，应先确保目标窗口已经最大化；至少也要保证窗口尺寸在本轮截图到点击之间保持不变。
 
 当前网格的绘制方式是：
@@ -109,24 +139,23 @@ agent-computer capture-grid --grid-size 50 --jpeg-quality 90 --output .\artifact
 
 推荐使用方式：
 
-1. 先聚焦目标窗口，并确保目标窗口已经最大化
-2. `capture-grid`
+1. 默认先看 latest grid image
+2. 只有在你需要冻结一张静态高精度坐标图时，再执行 `capture-grid`
 3. Codex 查看网格图并读取当前目标坐标
 4. `click` / `scroll` / `paste` / `press`
-5. 再次 `capture-grid` 查看状态并读取下一步坐标
-6. 重复这个循环
+5. 之后回到 latest grid image 持续推进
 
-### 3.4 预览截图
+### 3.5 预览截图
 
 给 Codex 做纯净观察用。默认整屏、无网格、压缩 JPEG。
-只有在网格图看不清当前状态、文字被网格干扰、或你需要单独确认视觉细节时，才建议使用。
+只有在 latest grid image 看不清当前状态、文字被网格干扰、或你需要单独确认视觉细节时，才建议使用。
 
 ```powershell
 agent-computer capture-preview
 agent-computer capture-preview --output .\artifacts\preview.jpg
 ```
 
-### 3.5 通用截图
+### 3.6 通用截图
 
 仍然保留通用截图命令，适合调试：
 
@@ -183,16 +212,17 @@ agent-computer hotkey ctrl shift s
 
 ## 5. 推荐给 Codex 的使用方式
 
-默认推荐这样组合，而不是依赖一个黑盒流程：
+默认推荐这样组合，而不是依赖手动截图主导的流程：
 
 1. 如果目标页面 URL 已知，先用 `open-url`
 2. 聚焦目标窗口，并确保目标窗口已经最大化
-3. 用 `capture-grid` 获取当前整屏网格图
-4. 由 Codex 直接查看网格图，读取当前目标坐标
-5. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
-6. 再次 `capture-grid` 查看页面状态，并顺便读取下一步坐标
-7. 按 `capture-grid -> 读坐标 -> 动作 -> capture-grid` 的方式循环推进
-8. 只有当网格图看不清当前状态时，才临时使用 `capture-preview`
+3. 用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
+4. Model 默认读取 `model_default_image_url`，也就是 latest grid image
+5. 如需确认 freshness，再读取 `model_default_meta_url`
+6. 用 `click`、`scroll`、`paste`、`open-url` 等原子动作执行业务步骤
+7. 再次读取 latest grid image，并顺便读取下一步坐标
+8. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
+9. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
 ## 6. 便捷启动
 
@@ -203,6 +233,7 @@ agent-computer hotkey ctrl shift s
 .\windows-launcher.ps1 browser-back
 .\windows-launcher.ps1 browser-forward
 .\windows-launcher.ps1 browser-refresh
+.\windows-launcher.ps1 observation urls
 .\windows-launcher.ps1 capture-grid --grid-size 50
 .\windows-launcher.ps1 click --x 500 --y 920
 .\windows-launcher.ps1 capture-grid --grid-size 50
@@ -221,7 +252,7 @@ agent-computer hotkey ctrl shift s
 
 项目支持一套统一的 Observation Layer：
 
-- Human 默认看 `preview`
+- Human 默认入口是 `/live`，并以 `preview` 作为默认展示模式
 - Model 默认取 `grid`
 - `snapshot` 能力继续保留，不被替代
 
@@ -234,6 +265,10 @@ token 位于：
 
 - `.agent\observation.json`
 
+manifest 位于：
+
+- `.agent\observation.urls.json`
+
 核心访问路径：
 
 ```text
@@ -243,11 +278,25 @@ token 位于：
 /observation/latest.json?token=<TOKEN>&mode=grid
 ```
 
+默认角色分工：
+
+- Human 默认看 `/live`
+- Model 默认看 `latest.jpg?mode=grid`
+- `latest.json?mode=grid` 用于 freshness / frame meta
+- `capture-preview` / `capture-grid` 只用于强化观察
+
+推荐拿 URL 的方式：
+
+```powershell
+agent-computer observation urls --json
+.\windows-launcher.ps1 observation urls --json
+.\scripts\show_observation_urls.ps1
+```
+
 推荐启动方式：
 
 ```powershell
 .\scripts\start_observation_local.ps1
-.\scripts\show_observation_urls.ps1
 ```
 
 如果需要远程访问：

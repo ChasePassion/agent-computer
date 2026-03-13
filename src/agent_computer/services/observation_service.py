@@ -23,6 +23,7 @@ from agent_computer.runtime import (
     observation_token_path,
     preview_latest_path,
     read_json,
+    write_observation_urls_manifest,
     write_json,
 )
 from agent_computer.services.artifact_retention import cleanup_observation_artifacts, cleanup_snapshot_artifacts
@@ -38,6 +39,8 @@ class ObservationService:
         self,
         session: SessionService,
         *,
+        host: str,
+        port: int,
         interval_sec: float = DEFAULT_OBSERVATION_INTERVAL_SEC,
         grid_size: int = DEFAULT_OBSERVATION_GRID_SIZE,
         jpeg_quality: int = DEFAULT_OBSERVATION_JPEG_QUALITY,
@@ -45,6 +48,8 @@ class ObservationService:
         retention_max_files: int = DEFAULT_OBSERVATION_RETENTION_MAX_FILES,
     ) -> None:
         self.session = session
+        self.host = host
+        self.port = port
         self.interval_sec = interval_sec
         self.grid_size = grid_size
         self.jpeg_quality = jpeg_quality
@@ -92,7 +97,7 @@ class ObservationService:
             if self._thread and self._thread.is_alive():
                 return
             ensure_runtime_dirs()
-            self.ensure_token()
+            self._write_urls_manifest(self.ensure_token())
             self._stop_event.clear()
             self.cleanup_if_needed(force=True)
             try:
@@ -199,6 +204,13 @@ class ObservationService:
         meta_temp = meta_path.with_name(meta_path.name + ".tmp")
         write_json(meta_temp, payload)
         meta_temp.replace(meta_path)
+
+    def _write_urls_manifest(self, token: str) -> None:
+        write_observation_urls_manifest(
+            token=token,
+            host=self.host,
+            port=self.port,
+        )
 
     @staticmethod
     def _generate_token() -> str:

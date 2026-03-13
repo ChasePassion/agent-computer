@@ -22,6 +22,7 @@ from agent_computer.models.requests import (
     ScrollRequest,
     TypeRequest,
 )
+from agent_computer.runtime import observation_token_path, read_json, write_observation_urls_manifest
 
 
 def _print_json(payload: Any) -> None:
@@ -36,6 +37,28 @@ def _call(
     payload: dict[str, Any] | None = None,
 ) -> Any:
     return client.request(method, path, payload)
+
+
+def _print_observation_urls(payload: dict[str, Any]) -> None:
+    print("Defaults:")
+    print(f"  Human Live: {payload['human_default_url']}")
+    print(f"  Model Image: {payload['model_default_image_url']}")
+    print(f"  Model Meta: {payload['model_default_meta_url']}")
+    print("")
+    print("Local:")
+    print(f"  Live: {payload['human_live_url']}")
+    print(f"  Preview Image: {payload['human_preview_url']}")
+    print(f"  Grid Image: {payload['human_grid_url']}")
+    print(f"  Grid Meta: {payload['model_default_meta_url']}")
+
+    public_bundle = payload.get("public")
+    if isinstance(public_bundle, dict):
+        print("")
+        print("Public:")
+        print(f"  Live: {payload['public_human_live_url']}")
+        print(f"  Preview Image: {payload['public_human_preview_url']}")
+        print(f"  Grid Image: {payload['public_human_grid_url']}")
+        print(f"  Grid Meta: {payload['public_model_default_meta_url']}")
 
 
 def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
@@ -163,6 +186,25 @@ def _handle_daemon(args: argparse.Namespace) -> None:
     raise RuntimeError(f"Unsupported command: {args.daemon_command}")
 
 
+def _handle_observation(args: argparse.Namespace) -> None:
+    client = DaemonClient(host=args.host, port=args.port)
+
+    if args.observation_command == "urls":
+        client.ensure_running()
+        token_payload = read_json(observation_token_path())
+        token = str(token_payload.get("token", "")).strip() if isinstance(token_payload, dict) else ""
+        if not token:
+            raise RuntimeError("Observation token is missing. Start the daemon and try again.")
+        payload = write_observation_urls_manifest(token=token, host=args.host, port=args.port)
+        if args.json:
+            _print_json(payload)
+        else:
+            _print_observation_urls(payload)
+        return
+
+    raise RuntimeError(f"Unsupported command: {args.observation_command}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-computer",
@@ -274,6 +316,13 @@ def build_parser() -> argparse.ArgumentParser:
     hotkey_parser = subparsers.add_parser("hotkey", help="Press a hotkey chord.")
     hotkey_parser.add_argument("keys", nargs="+", help="Keys to press together, for example ctrl shift s.")
 
+    observation_parser = subparsers.add_parser("observation", help="Observation helpers.")
+    observation_subparsers = observation_parser.add_subparsers(dest="observation_command", required=True)
+    observation_urls_parser = observation_subparsers.add_parser("urls", help="Print default observation URLs.")
+    observation_urls_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
+    observation_urls_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
+    observation_urls_parser.add_argument("--json", action="store_true", help="Print URLs as JSON.")
+
     daemon_parser = subparsers.add_parser("daemon", help="Manage the local agent-computer daemon.")
     daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command", required=True)
     for subcommand in ("start", "status", "stop"):
@@ -294,6 +343,10 @@ def main() -> None:
 
     if args.command == "daemon":
         _handle_daemon(args)
+        return
+
+    if args.command == "observation":
+        _handle_observation(args)
         return
 
     client = DaemonClient()

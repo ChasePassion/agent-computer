@@ -12,4 +12,5 @@ Write-Host "Starting agent-computer daemon for observation on $BindHost`:$Port .
 
 Write-Host ""
 Write-Host "Observation daemon started."
-Write-Host "Run .\scripts\show_observation_urls.ps1 to print the live URLs."
+Write-Host ""
+& .\windows-launcher.ps1 observation urls --host $BindHost --port $Port
