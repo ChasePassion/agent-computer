@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from agent_computer.api.routes_actions import router as actions_router
+from agent_computer.api.routes_browser_assist import router as browser_assist_router
+from agent_computer.api.routes_browser_assist_ws import router as browser_assist_ws_router
 from agent_computer.api.routes_capture import router as capture_router
 from agent_computer.api.routes_navigation import router as navigation_router
 from agent_computer.api.routes_observation import router as observation_router
@@ -32,6 +34,8 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.include_router(navigation_router)
     app.include_router(actions_router)
     app.include_router(observation_router)
+    app.include_router(browser_assist_router)
+    app.include_router(browser_assist_ws_router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:

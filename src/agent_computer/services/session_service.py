@@ -15,6 +15,12 @@ class SessionService:
         self._observation_frames: dict[str, dict[str, Any]] = {}
         self._observation_token: str | None = None
         self._last_observation_cleanup_at: str | None = None
+        self._browser_assist_token: str | None = None
+        self._browser_assist_connected: bool = False
+        self._browser_assist_last_keepalive_at: str | None = None
+        self._browser_assist_last_page_url: str | None = None
+        self._browser_assist_last_page_title: str | None = None
+        self._browser_assist_last_error: str | None = None
 
     def set_last_capture(self, payload: dict[str, Any]) -> None:
         with self._lock:
@@ -41,6 +47,30 @@ class SessionService:
         with self._lock:
             self._last_observation_cleanup_at = value
 
+    def set_browser_assist_token(self, token: str) -> None:
+        with self._lock:
+            self._browser_assist_token = token
+
+    def set_browser_assist_connected(self, connected: bool) -> None:
+        with self._lock:
+            self._browser_assist_connected = connected
+
+    def set_browser_assist_last_keepalive_at(self, value: str) -> None:
+        with self._lock:
+            self._browser_assist_last_keepalive_at = value
+
+    def set_browser_assist_last_page_url(self, url: str | None) -> None:
+        with self._lock:
+            self._browser_assist_last_page_url = url
+
+    def set_browser_assist_last_page_title(self, title: str | None) -> None:
+        with self._lock:
+            self._browser_assist_last_page_title = title
+
+    def set_browser_assist_last_error(self, value: str | None) -> None:
+        with self._lock:
+            self._browser_assist_last_error = value
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             preview = self._observation_frames.get("preview")
@@ -55,4 +85,10 @@ class SessionService:
                 "observation_preview_updated_at": None if preview is None else preview.get("updated_at"),
                 "observation_grid_updated_at": None if grid is None else grid.get("updated_at"),
                 "last_observation_cleanup_at": self._last_observation_cleanup_at,
+                "browser_assist_token_present": self._browser_assist_token is not None,
+                "browser_assist_connected": self._browser_assist_connected,
+                "browser_assist_last_keepalive_at": self._browser_assist_last_keepalive_at,
+                "browser_assist_last_page_url": self._browser_assist_last_page_url,
+                "browser_assist_last_page_title": self._browser_assist_last_page_title,
+                "browser_assist_last_error": self._browser_assist_last_error,
             }

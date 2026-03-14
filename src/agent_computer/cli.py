@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -9,6 +10,7 @@ import httpx
 from agent_computer.actions import mouse_position
 from agent_computer.client import DaemonClient
 from agent_computer.daemon import main as daemon_main
+from agent_computer.models.browser_assist import BrowserAssistLocateRequest
 from agent_computer.models.requests import (
     BrowserOpenUrlRequest,
     CaptureGridRequest,
@@ -155,6 +157,18 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
 
     if command == "browser-refresh":
         _print_json(_call(client, method="POST", path="/navigation/browser-refresh"))
+        return
+
+    if command == "browser-assist-status":
+        _print_json(_call(client, method="GET", path="/browser-assist/status"))
+        return
+
+    if command == "browser-assist-locate":
+        raw_input = args.input_json
+        if args.input_file:
+            raw_input = Path(args.input_file).read_text(encoding="utf-8")
+        payload = BrowserAssistLocateRequest.model_validate(json.loads(raw_input)).model_dump(mode="json")
+        _print_json(_call(client, method="POST", path="/browser-assist/locate", payload=payload))
         return
 
     if command == "press":
@@ -341,6 +355,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("browser-back", help="Navigate the active browser back.")
     subparsers.add_parser("browser-forward", help="Navigate the active browser forward.")
     subparsers.add_parser("browser-refresh", help="Refresh the active browser page.")
+    subparsers.add_parser("browser-assist-status", help="Show Browser Assist extension connection status.")
+
+    browser_assist_locate_parser = subparsers.add_parser(
+        "browser-assist-locate",
+        help="Send a structured Browser Assist locate request.",
+    )
+    browser_assist_locate_input_group = browser_assist_locate_parser.add_mutually_exclusive_group(required=True)
+    browser_assist_locate_input_group.add_argument("--input-json", help="Inline JSON request payload.")
+    browser_assist_locate_input_group.add_argument("--input-file", help="Path to a JSON request payload.")
 
     press_parser = subparsers.add_parser("press", help="Press a single key.")
     press_parser.add_argument("--key", required=True, help="Key name, for example enter or tab.")

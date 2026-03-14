@@ -20,6 +20,7 @@ DEFAULT_OBSERVATION_JPEG_QUALITY = int(os.getenv("AGENT_COMPUTER_OBSERVATION_JPE
 DEFAULT_OBSERVATION_RETENTION_DAYS = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_DAYS", "7"))
 DEFAULT_OBSERVATION_RETENTION_MAX_FILES = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_MAX_FILES", "200"))
 DEFAULT_OBSERVATION_PUBLIC_BASE_URL = os.getenv("AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL", "").strip()
+DEFAULT_BROWSER_ASSIST_WS_PATH = os.getenv("AGENT_COMPUTER_BROWSER_ASSIST_WS_PATH", "/ws/browser-assist")
 
 
 def ensure_runtime_dirs() -> None:
@@ -81,6 +82,11 @@ def observation_remote_config_path() -> Path:
 def observation_urls_path() -> Path:
     ensure_runtime_dirs()
     return AGENT_DIR / "observation.urls.json"
+
+
+def browser_assist_config_path() -> Path:
+    ensure_runtime_dirs()
+    return AGENT_DIR / "browser_assist.json"
 
 
 def preview_latest_path() -> Path:

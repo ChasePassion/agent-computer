@@ -17,3 +17,9 @@ class DaemonHealthResponse(BaseModel):
     observation_preview_updated_at: str | None = None
     observation_grid_updated_at: str | None = None
     last_observation_cleanup_at: str | None = None
+    browser_assist_token_present: bool = False
+    browser_assist_connected: bool = False
+    browser_assist_last_keepalive_at: str | None = None
+    browser_assist_last_page_url: str | None = None
+    browser_assist_last_page_title: str | None = None
+    browser_assist_last_error: str | None = None
