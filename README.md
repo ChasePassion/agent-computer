@@ -2,18 +2,208 @@
 
 一个给 Codex 直接调用的 Windows 桌面原子工具集。
 
-发布后的安装方式：
+## 0. Agent First Quickstart
+
+推荐顺序如下：
 
 ```powershell
-uv tool install agent-computer-max
+npx skills add https://github.com/ChasePassion/agent-computer-skill
+git clone https://github.com/ChasePassion/agent-computer.git
+cd agent-computer
+Copy-Item .env.example .env
+.\scripts\bootstrap.ps1
 ```
 
-安装后命令入口仍然是：
+说明：
+
+- 安装skill这一步依赖 `Node.js` / `npx`
+- 如果当前机器没有 `npx`，先安装 Node.js 再继续
+- 如果需要远程 live，把维护者私下提供的服务器信息填进 `.env`
+- 出于安全原因，`.env` 不进 git，仓库只提供 `.env.example`
+
+模式切换规则：
+
+- 如果 `.env` **不配置远程相关项**，就继续走本地模式 / 原有模式
+- 如果 `.env` **配置了远程相关项**，`bootstrap.ps1` 会写入 `.agent/observation.remote.json`，后续 observation / tunnel 会走远程共享服务器
+- 如果你本地已经存在旧的 `.agent/observation.remote.json`，而 `.env` 没有提供新的远程项，脚本会继续沿用那份已有配置
+
+也就是说：
+
+- 不配远程 `.env`：默认还是本地用
+- 配了远程 `.env`：就切到共享服务器用
+
+bootstrap 完成后，常用命令是：
+
+```powershell
+.\windows-launcher.ps1 daemon start
+.\windows-launcher.ps1 observation urls
+```
+
+这两个脚本的职责：
+
+- `scripts/bootstrap.ps1`
+  - 创建或更新 `.conda`
+  - 执行 `pip install -e .`
+  - 启动 daemon 并生成 observation URL
+  - 不负责安装外部 skills
+
+bootstrap 结束后会生成：
+
+- `.agent/bootstrap.status.json`
+- `.agent/observation.remote.json`
+
+agent 下次进入仓库时，可以先看这个文件判断本地是否已经初始化完成。
+
+如果在运行 `bootstrap.ps1` 前已经在 `.env` 里写了下面这些值，bootstrap 会自动生成 `.agent/observation.remote.json`：
+
+- `AGENT_COMPUTER_RELAY_HOST`
+- `AGENT_COMPUTER_RELAY_USER`
+- `AGENT_COMPUTER_RELAY_PORT`
+- `AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL`
+- 可选：`AGENT_COMPUTER_RELAY_SSH_PORT`
+- 可选：`AGENT_COMPUTER_RELAY_PASSWORD`
+
+## 0.0 直连共享服务器
+
+推荐按照下面顺序执行：
+
+1. 安装外部 skills
+2. 拿到维护者单独提供的服务器信息
+3. 把 `.env.example` 复制为 `.env`
+4. 在 `.env` 中填写：
+
+```powershell
+AGENT_COMPUTER_RELAY_HOST=<relay host>
+AGENT_COMPUTER_RELAY_USER=<relay user>
+AGENT_COMPUTER_RELAY_PORT=<relay port>
+AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL=<public base url>
+AGENT_COMPUTER_RELAY_PASSWORD=<relay password>
+```
+
+5. 运行 `.\scripts\bootstrap.ps1`，让本地写出 `.agent/observation.remote.json`：
+
+```powershell
+.\scripts\bootstrap.ps1
+```
+
+6. 启动本地 daemon 和反向隧道：
+
+```powershell
+.\scripts\start_observation_local.ps1
+.\scripts\start_observation_tunnel.ps1
+.\scripts\show_observation_urls.ps1
+```
+
+如果设置了 `AGENT_COMPUTER_RELAY_PASSWORD`，隧道脚本会优先走仓库内置的非交互 Python/paramiko 模式，不必卡在 SSH 手动输密码。
+
+最终 live 地址会是维护者提供的 `public_base_url`：
+
+```text
+<public_base_url>/live?token=...
+```
+
+## 0.1 帮用户上传 Browser Assist 插件
+
+ `Browser Assist Locator`，你需要帮助用户完成 Chrome 扩展上传。
+
+推荐流程：
+
+### 第 1 步：确保技能和 daemon 已准备好
+
+```powershell
+npx skills add https://github.com/ChasePassion/agent-computer-skill
+.\windows-launcher.ps1 daemon start
+.\windows-launcher.ps1 browser-assist-status
+```
+
+如果这时返回 `connected: false`，属于正常，说明后端已经起来了，只是扩展还没有上传到 Chrome。
+
+### 第 2 步：打开扩展页并帮助用户上传
+
+目标页面：
+
+```text
+chrome://extensions/
+```
+
+推荐按这个顺序执行：
+
+1. 打开 `chrome://extensions/`
+2. 确保 Chrome 最大化
+3. 开启右上角 `Developer mode`
+4. 点击 `Load unpacked`
+5. 在弹出的文件夹选择器中，选择：`extensions/browser-assist-locator`
+
+### 第 3 步：帮用户确认扩展是否连接成功
+
+```powershell
+.\windows-launcher.ps1 browser-assist-status
+```
+
+成功时应出现：
+
+- `connected: true`
+- `extensionVersion`
+- `browserName`
+- `lastSeenAt`
+
+如果仍未连接，推荐排障顺序：
+
+1. 确认扩展已加载且开关开启
+2. 确认浏览器是前台窗口
+3. 回到 `chrome://extensions/` 点击 `Update`
+4. 再次执行 `browser-assist-status`
+
+### 第 4 步：正式使用 Browser Assist
+
+```powershell
+.\windows-launcher.ps1 browser-open-url --url "<目标 URL>"
+.\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+```
+
+定位成功后，真正执行点击的仍然是：
+
+```powershell
+.\windows-launcher.ps1 click --x <screen_x> --y <screen_y>
+```
+
+也就是说：
+
+- 扩展负责定位
+- daemon 负责映射
+- `agent-computer` 负责执行
+
+### 第 5 步：代码更新后的扩展刷新
+
+如果扩展代码改了，不需要重新走完整上传流程，优先这样做：
+
+1. 回到 `chrome://extensions/`
+2. 确保 `Developer mode` 开启
+3. 点击 `Update`
+4. 再次执行 `.\windows-launcher.ps1 browser-assist-status`
+
+## 0.2 命令入口
+
+源码安装完成后，命令入口是：
 
 - `agent-computer`
 - `agent-computer-daemon`
 
-现在它只保留纯桌面控制、Observation latest 与截图强化能力：
+## 0.3 远程观察与服务器
+
+当前 observation / live 的默认路径仍然是：
+
+1. 本地启动 daemon
+2. 如果需要公网访问，使用你已有服务器做反向代理和隧道
+3. 通过以下脚本查看最终访问 URL：
+
+```powershell
+.\scripts\start_observation_local.ps1
+.\scripts\start_observation_tunnel.ps1
+.\scripts\show_observation_urls.ps1
+```
+
+现有纯桌面控制、Observation latest 与截图强化能力：
 
 - Observation latest preview / grid
 - 绝对坐标网格截图
@@ -24,15 +214,13 @@ uv tool install agent-computer-max
 - 键盘输入 / 粘贴 / 热键
 - 浏览器 URL 直达导航
 
-项目不再内置任何视觉理解模型调用。
 如果需要定位元素，推荐流程是：
 
 1. 先确保 daemon 与 Observation Layer 已启动
-2. Human 默认看 `/live` 或 latest preview
-3. Model 默认取 latest grid image，而不是直接看 `/live` 网页
-4. 调用点击、滚动、输入等桌面动作
-5. 再读取最新的 latest grid image，确认状态并顺便读取下一步坐标
-6. 如此循环
+2. Model 默认取 latest grid image，而不是直接看 `/live` 网页
+3. 调用点击、滚动、输入等桌面动作
+4. 再读取最新的 latest grid image，确认状态并顺便读取下一步坐标
+5. 如此循环
 
 只有在 latest image 看不清楚当前状态、或你需要冻结一张更高确定性的静态图时，才额外使用手动截图做兜底观察。
 如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
@@ -44,8 +232,6 @@ uv tool install agent-computer-max
 - 在点击之后没有出现预期结果时，先获取当前鼠标坐标信息，再对照最新网格图片复核，优先排查是否因为坐标偏差导致点击没有落在目标上
 - 每次对目标开始操作之前，首先阅读相关的 skill / 操作手册
 - 思考一切可行办法去完成用户的需求；在用户需求被完成之前，不要因为单次失败、页面异常或路径不顺手就停止
-- 当实际操作时出现“操作手册中不存在的行为 -> 结果映射”时，需要把新映射追加到对应手册中
-- 追加手册时，至少记录当时的 URL、鼠标坐标、触发动作和页面反馈
 
 ## 1. 创建 conda 环境
 
@@ -72,22 +258,9 @@ pip install -e .
 
 ## 3. 原子工具
 
-### 3.1 页面进入策略
+### 3.1 浏览器导航命令
 
-如果目标是“进入某个已知页面”，优先级应该是：
-
-1. 能拿到可靠 URL：优先直接打开 URL
-2. 拿不到 URL，但能构造稳定 URL：优先直接构造并打开
-3. 只有在 URL 不可得、需要站内跳转、或必须依赖当前页面状态时，才走 `latest grid image -> 读坐标 -> click -> latest grid image -> ...`
-
-也就是说：
-
-- URL 优先
-- 点击兜底
-
-### 3.2 URL 直达导航
-
-如果当前活动窗口已经是浏览器，推荐直接用：
+用于当前前台浏览器窗口的 URL 打开、URL 读取和前进后退控制：
 
 ```powershell
 agent-computer browser-open-url --url "https://www.zhipin.com/"
@@ -98,22 +271,36 @@ agent-computer browser-forward
 agent-computer browser-refresh
 ```
 
-这个命令的行为是：
+行为说明：
 
-- 发送 `Ctrl+L`
-- 把 URL 放进剪贴板并粘贴
-- 发送 `Enter`
+- `browser-open-url`：`Ctrl+L -> Ctrl+A -> paste URL -> Enter`
 - `browser-current-url` 的行为是：校验前台窗口是浏览器，再执行 `Ctrl+L -> Ctrl+C -> Esc` 读取当前地址栏 URL
 - `browser-back` 的行为是：`Alt+Left`
 - `browser-forward` 的行为是：`Alt+Right`
 - `browser-refresh` 的行为是：`Ctrl+R`
-- 在操作浏览器网页时，如果误触进入了同一网站的下一个页面，可以直接使用 `browser-back` 返回
-- 一般情况下，执行 `browser-back` 之后，可以默认浏览器已经回到上一个页面，并继续使用上一张 frame 推进，而不需要立刻重新查看当前页面
-- 例外是会实时变化的网页；这类页面在执行 `browser-back` 之后，仍然建议重新读取 latest image 确认当前状态
 
-### 3.3 Observation latest（默认）
+### 3.2 Browser Assist 插件命令
 
-Observation Layer 是默认观察入口，不需要每一步都手动抓图。
+用于 Browser Assist Locator 扩展的打包、连接状态检查和结构化定位：
+
+```powershell
+.\scripts\package_browser_assist_extension.ps1
+.\windows-launcher.ps1 browser-assist-status
+.\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+agent-computer browser-assist-status
+agent-computer browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+```
+
+说明：
+
+- `package_browser_assist_extension.ps1`：把扩展模板复制到产物目录，并把 `service_worker.js` 里的 WebSocket URL 替换成当前 daemon 的连接地址
+- `browser-assist-status`：读取扩展连接状态，确认是否已经 `connected: true`
+- `browser-assist-locate`：向扩展发送结构化 locate 请求，返回 `raw + mapped`
+- 插件负责定位，daemon 负责 screen 映射，真实动作仍由 `click` / `type` / `scroll` 执行
+
+### 3.3 Observation 命令与接口
+
+Observation Layer 提供 live 页面、latest frame 和鼠标坐标读取：
 
 - Human 默认入口：`/live?token=<TOKEN>`
 - Human live frame 接口：`/live/frame.jpg?token=<TOKEN>&mode=preview|grid`
@@ -121,25 +308,9 @@ Observation Layer 是默认观察入口，不需要每一步都手动抓图。
 - Model 默认入口：`/observation/latest.jpg?token=<TOKEN>&mode=grid`
 - Model 默认元数据：`/observation/latest.json?token=<TOKEN>&mode=grid`
 - latest preview 仍然保留给 Human 做纯净观察
-
-推荐读取顺序：
-
-1. 启动 daemon
-2. 取 `.agent\observation.urls.json`
-3. Human 用 `human_live_url`
-4. Model 用 `model_default_image_url`
-5. 如需确认 freshness，再读 `model_default_meta_url`
-6. 如需读取当前鼠标坐标，优先读 `model_mouse_url`
-
-也就是说：
-
-- `/live` 是 Human console
-- `/live/frame.*` 仅给 Human live 页面使用，可在 preview / grid 之间切换
-- latest grid image 是 Model default
 - `latest.json` 会返回与当前 frame 对齐的 `mouse_position`
 - `/observation/mouse.json` 提供当前鼠标的即时坐标
 - `/observation/latest.*` 现在只支持 `mode=grid`，用于 AI / model 侧
-- 手动截图是强化手段，不是默认入口
 
 ```powershell
 .\windows-launcher.ps1 observation urls
@@ -148,47 +319,23 @@ agent-computer observation urls --json
 agent-computer observation mouse --json
 ```
 
-### 3.4 网格截图
+### 3.4 截图命令
 
-给 Codex 或人工读取精确坐标用。默认整屏、带绝对坐标网格、高质量 JPEG。
-这是手动冻结一张高精度坐标图的方式，不再是默认观察入口。
-在执行任何截图前，应先确保目标窗口已经最大化；至少也要保证窗口尺寸在本轮截图到点击之间保持不变。
-
-当前网格的绘制方式是：
-
-- 四边标尺带
-- 细网格线每 `50px` 一条
-- 主网格线每 `100px` 一条并带标签
-- 大号等宽数字只显示在 `100px` 主网格线上
-- 标签只画在外围，不遮挡屏幕内容
-- 返回坐标仍然是屏幕绝对坐标，不是标尺带的图片像素坐标
+网格截图：
 
 ```powershell
 agent-computer capture-grid
 agent-computer capture-grid --grid-size 50 --jpeg-quality 90 --output .\artifacts\grid.jpg
 ```
 
-推荐使用方式：
-
-1. 默认先看 latest grid image
-2. 只有在你需要冻结一张静态高精度坐标图时，再执行 `capture-grid`
-3. Codex 查看网格图并读取当前目标坐标
-4. `click` / `scroll` / `paste` / `press`
-5. 之后回到 latest grid image 持续推进
-
-### 3.5 预览截图
-
-给 Codex 做纯净观察用。默认整屏、无网格、压缩 JPEG。
-只有在 latest grid image 看不清当前状态、文字被网格干扰、或你需要单独确认视觉细节时，才建议使用。
+预览截图：
 
 ```powershell
 agent-computer capture-preview
 agent-computer capture-preview --output .\artifacts\preview.jpg
 ```
 
-### 3.6 通用截图
-
-仍然保留通用截图命令，适合调试：
+通用截图：
 
 ```powershell
 agent-computer capture --target primary-screen --format png
@@ -196,7 +343,15 @@ agent-computer capture --target active-window --format jpeg --jpeg-quality 70
 agent-computer capture --window-title "Windows PowerShell" --grid
 ```
 
-## 4. 桌面动作命令
+截图说明：
+
+- `capture-grid`：整屏、高质量 JPEG、带绝对坐标网格
+- `capture-preview`：整屏、压缩 JPEG、无网格
+- `capture`：通用截图入口，可指定目标窗口、格式和网格
+- 网格绘制使用四边标尺带，默认细线 `50px`，主线 `100px`
+- 返回坐标始终是屏幕绝对坐标
+
+### 3.5 窗口与鼠标动作命令
 
 列出窗口：
 
@@ -218,17 +373,13 @@ agent-computer click --x 500 --y 920
 agent-computer click --x 500 --y 920 --double
 ```
 
-滚轮、输入、粘贴、URL 导航、按键、组合键：
+滚轮、输入、粘贴、按键、组合键：
 
 ```powershell
 agent-computer scroll --amount -500
 agent-computer type --text "hello world"
 agent-computer paste --text "agent开发"
 agent-computer paste --text "agent开发" --restore-clipboard
-agent-computer browser-open-url --url "https://www.zhipin.com/"
-agent-computer browser-back
-agent-computer browser-forward
-agent-computer browser-refresh
 agent-computer press --key enter
 agent-computer hotkey ctrl shift s
 ```
@@ -237,17 +388,13 @@ agent-computer hotkey ctrl shift s
 
 - `type` 适合 ASCII、快捷测试
 - `paste` 更适合中文、长文本、复杂内容
-- `browser-open-url` 适合已知目标页面
-- `browser-current-url` 适合确认当前浏览器真实落点
-- `browser-back` / `browser-forward` / `browser-refresh` 适合当前活动浏览器窗口
 - `paste` 的行为是：先把指定文本放进 Windows 剪贴板，再发送 `Ctrl+V`
-- `browser-open-url` 的行为是：`Ctrl+L -> Ctrl+A -> paste URL -> Enter`
 
-## 5. 推荐给 Codex 的使用方式
+## 4. 使用方式
 
 默认推荐这样组合，而不是依赖手动截图主导的流程。
 
-### 5.1 通用桌面链路
+### 4.1 通用桌面链路
 
 适用场景：
 
@@ -271,7 +418,7 @@ agent-computer hotkey ctrl shift s
 13. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
 14. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
-### 5.2 浏览器网页链路
+### 4.2 浏览器网页链路
 
 适用场景：
 
@@ -296,7 +443,7 @@ agent-computer hotkey ctrl shift s
 - `grid` 在这个链路里默认只负责看结果
 - 只有 Browser Assist 失败或当前页面不适合插件定位时，才回退到纯 grid 读坐标
 
-## 6. 便捷启动
+## 5. 便捷启动
 
 项目根目录自带一个 Windows launcher：
 
@@ -323,7 +470,7 @@ agent-computer hotkey ctrl shift s
 
 也就是说，`.\windows-launcher.ps1` 不再维护第二套命令定义或参数默认值。
 
-## 7. Observation Layer
+## 6. Observation Layer
 
 项目支持一套统一的 Observation Layer：
 
@@ -398,7 +545,7 @@ Nginx 反向代理模板位于：
 - `deploy\nginx\agent-computer-observation.conf.example`
 - `deploy\observation.remote.json.example`
 
-## 8. Browser Assist Locator
+## 7. Browser Assist Locator
 
 项目提供一套 Browser Assist Locator v1 最小闭环：
 

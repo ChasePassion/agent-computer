@@ -1,6 +1,6 @@
 {
   "relay_host": "your-relay-host",
-  "relay_user": "your-ssh-user",
+  "relay_user": "your-relay-user",
   "ssh_port": 22,
   "relay_port": 43768,
   "local_host": "127.0.0.1",

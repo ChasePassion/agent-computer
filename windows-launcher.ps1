@@ -6,6 +6,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $projectRoot = $PSScriptRoot
+. (Join-Path $projectRoot "scripts\load_env.ps1")
+Import-ProjectEnv -ProjectRoot $projectRoot
 $localEnvRoot = Join-Path $projectRoot ".conda"
 $localCliExe = Join-Path $localEnvRoot "Scripts\agent-computer.exe"
 $localDaemonExe = Join-Path $localEnvRoot "Scripts\agent-computer-daemon.exe"

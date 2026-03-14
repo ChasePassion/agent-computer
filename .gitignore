@@ -7,10 +7,9 @@ build/
 dist/
 .tmp-smoke/
 artifacts/
+.agent/bootstrap.status.json
 .agent/observation.json
 .agent/observation.urls.json
 .agent/observation.remote.json
 .agent/browser_assist.json
-BOSS直聘操作手册.md
-chrome extensions操作手册.md
-windows文件资源管理器使用手册.md
+.agent/AGENTS.md
