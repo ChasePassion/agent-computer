@@ -20,6 +20,12 @@ def _normalize_mode(value: str | None, *, default: Literal["preview", "grid"]) -
     raise HTTPException(status_code=400, detail=f"Unsupported observation mode: {value}")
 
 
+def _normalize_grid_only_mode(value: str | None) -> Literal["grid"]:
+    if value in {None, "grid"}:
+        return "grid"
+    raise HTTPException(status_code=400, detail="AI-facing observation endpoints only support mode=grid.")
+
+
 def _require_token(
     token: str | None = Query(default=None),
     registry: ServiceRegistry = Depends(get_registry),
@@ -141,7 +147,7 @@ def live_page(
     }}
 
     function latestJsonUrl() {{
-      return `/observation/latest.json?token=${{encodeURIComponent(token)}}&mode=${{encodeURIComponent(mode)}}`;
+      return `/live/frame.json?token=${{encodeURIComponent(token)}}&mode=${{encodeURIComponent(mode)}}`;
     }}
 
     async function poll() {{
@@ -188,6 +194,47 @@ def live_page(
     return HTMLResponse(content=html)
 
 
+@router.get("/live/frame.jpg", name="live_observation_image")
+def live_image(
+    request: Request,
+    _: str = Depends(_require_token),
+    mode: str | None = Query(default=None),
+    registry: ServiceRegistry = Depends(get_registry),
+) -> FileResponse:
+    normalized_mode = _normalize_mode(mode, default="grid")
+    try:
+        image_path = registry.observation.latest_image_path(normalized_mode)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return FileResponse(
+        image_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@router.get("/live/frame.json")
+def live_json(
+    request: Request,
+    token: str = Depends(_require_token),
+    mode: str | None = Query(default=None),
+    registry: ServiceRegistry = Depends(get_registry),
+) -> JSONResponse:
+    normalized_mode = _normalize_mode(mode, default="grid")
+    payload = registry.observation.latest(normalized_mode)
+    if payload is None:
+        raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {normalized_mode}")
+    image_url = str(
+        request.url_for("live_observation_image").include_query_params(
+            token=token,
+            mode=normalized_mode,
+        )
+    )
+    response_payload = dict(payload)
+    response_payload["image_url"] = image_url
+    return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
 @router.get("/observation/latest.jpg", name="observation_latest_image")
 def latest_image(
     request: Request,
@@ -195,7 +242,7 @@ def latest_image(
     mode: str | None = Query(default=None),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> FileResponse:
-    normalized_mode = _normalize_mode(mode, default="grid")
+    normalized_mode = _normalize_grid_only_mode(mode)
     try:
         image_path = registry.observation.latest_image_path(normalized_mode)
     except RuntimeError as exc:
@@ -214,7 +261,7 @@ def latest_json(
     mode: str | None = Query(default=None),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> JSONResponse:
-    normalized_mode = _normalize_mode(mode, default="grid")
+    normalized_mode = _normalize_grid_only_mode(mode)
     payload = registry.observation.latest(normalized_mode)
     if payload is None:
         raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {normalized_mode}")

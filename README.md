@@ -105,6 +105,8 @@ agent-computer browser-refresh
 Observation Layer 是默认观察入口，不需要每一步都手动抓图。
 
 - Human 默认入口：`/live?token=<TOKEN>`
+- Human live frame 接口：`/live/frame.jpg?token=<TOKEN>&mode=preview|grid`
+- Human live meta 接口：`/live/frame.json?token=<TOKEN>&mode=preview|grid`
 - Model 默认入口：`/observation/latest.jpg?token=<TOKEN>&mode=grid`
 - Model 默认元数据：`/observation/latest.json?token=<TOKEN>&mode=grid`
 - latest preview 仍然保留给 Human 做纯净观察
@@ -121,9 +123,11 @@ Observation Layer 是默认观察入口，不需要每一步都手动抓图。
 也就是说：
 
 - `/live` 是 Human console
+- `/live/frame.*` 仅给 Human live 页面使用，可在 preview / grid 之间切换
 - latest grid image 是 Model default
 - `latest.json` 会返回与当前 frame 对齐的 `mouse_position`
 - `/observation/mouse.json` 提供当前鼠标的即时坐标
+- `/observation/latest.*` 现在只支持 `mode=grid`，用于 AI / model 侧
 - 手动截图是强化手段，不是默认入口
 
 ```powershell
@@ -230,7 +234,15 @@ agent-computer hotkey ctrl shift s
 
 ## 5. 推荐给 Codex 的使用方式
 
-默认推荐这样组合，而不是依赖手动截图主导的流程：
+默认推荐这样组合，而不是依赖手动截图主导的流程。
+
+### 5.1 通用桌面链路
+
+适用场景：
+
+- 桌面原生应用
+- 没有 Browser Assist 的网页
+- 需要直接按屏幕坐标推进的场景
 
 1. 如果目标页面 URL 已知，先用 `browser-open-url`
 2. 聚焦目标窗口，并确保目标窗口已经最大化
@@ -248,6 +260,31 @@ agent-computer hotkey ctrl shift s
 13. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
 14. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
 
+### 5.2 浏览器网页链路
+
+适用场景：
+
+- Chrome / Chromium 网页
+- Browser Assist 扩展已连接
+- 需要先做 DOM 几何定位，再做桌面点击的场景
+
+默认推荐顺序：
+
+1. 如果目标页面 URL 已知，先用 `browser-open-url`
+2. 聚焦目标浏览器窗口，并确保目标窗口已经最大化
+3. 确认 Browser Assist 已连接：
+   使用 `browser-assist-status`
+4. 用 `browser-assist-locate` 发送结构化定位请求
+5. 从返回结果中读取 `mapped.screenCandidates[*].screenPoint`
+6. 用 `click` 执行桌面点击
+7. 点击后再读取 latest grid image，仅用于确认结果，而不是用于先定位
+
+也就是说：
+
+- 浏览器页面的默认定位来源是 Browser Assist
+- `grid` 在这个链路里默认只负责看结果
+- 只有 Browser Assist 失败或当前页面不适合插件定位时，才回退到纯 grid 读坐标
+
 ## 6. 便捷启动
 
 项目根目录自带一个 Windows launcher：
@@ -255,12 +292,13 @@ agent-computer hotkey ctrl shift s
 ```powershell
 .\windows-launcher.ps1 browser-open-url --url "https://www.zhipin.com/"
 .\windows-launcher.ps1 browser-current-url
+.\windows-launcher.ps1 browser-assist-status
+.\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
 .\windows-launcher.ps1 browser-back
 .\windows-launcher.ps1 browser-forward
 .\windows-launcher.ps1 browser-refresh
 .\windows-launcher.ps1 maximize --title "Google Chrome"
 .\windows-launcher.ps1 observation urls
-.\windows-launcher.ps1 capture-grid --grid-size 50
 .\windows-launcher.ps1 click --x 500 --y 920
 .\windows-launcher.ps1 capture-grid --grid-size 50
 .\windows-launcher.ps1 capture-preview
@@ -303,7 +341,10 @@ manifest 位于：
 
 ```text
 /live?token=<TOKEN>
-/observation/latest.jpg?token=<TOKEN>&mode=preview
+/live/frame.jpg?token=<TOKEN>&mode=preview
+/live/frame.jpg?token=<TOKEN>&mode=grid
+/live/frame.json?token=<TOKEN>&mode=preview
+/live/frame.json?token=<TOKEN>&mode=grid
 /observation/latest.jpg?token=<TOKEN>&mode=grid
 /observation/latest.json?token=<TOKEN>&mode=grid
 /observation/mouse.json?token=<TOKEN>
@@ -312,6 +353,7 @@ manifest 位于：
 默认角色分工：
 
 - Human 默认看 `/live`
+- Human 通过 `/live` 内部切换 `preview` / `grid`
 - Model 默认看 `latest.jpg?mode=grid`
 - `latest.json?mode=grid` 用于 freshness / frame meta
 - `latest.json?mode=grid` 中的 `mouse_position` 与当前 frame 对齐
@@ -344,3 +386,94 @@ Nginx 反向代理模板位于：
 
 - `deploy\nginx\agent-computer-observation.conf.example`
 - `deploy\observation.remote.json.example`
+
+## 8. Browser Assist Locator
+
+项目提供一套 Browser Assist Locator v1 最小闭环：
+
+- 扩展负责网页 DOM 几何定位
+- daemon 负责 WebSocket 桥接与坐标映射
+- `agent-computer` 继续负责实际桌面动作执行
+
+Browser Assist 的后端入口：
+
+```text
+GET  /browser-assist/status
+POST /browser-assist/locate
+GET  /ws/browser-assist?token=<TOKEN>
+```
+
+Browser Assist 配置文件位于：
+
+- `.agent\browser_assist.json`
+
+扩展源代码位于：
+
+- `extensions\browser-assist-locator`
+
+打包扩展：
+
+```powershell
+.\scripts\package_browser_assist_extension.ps1
+```
+
+查看扩展连接状态：
+
+```powershell
+.\windows-launcher.ps1 browser-assist-status
+```
+
+执行 Browser Assist 定位：
+
+```powershell
+.\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+```
+
+请求体示例：
+
+```json
+{
+  "query": {
+    "text": "收藏",
+    "role": "button",
+    "hint": "当前职位详情区域里的收藏按钮",
+    "selectorHint": null,
+    "index": 0
+  },
+  "options": {
+    "visibleOnly": true,
+    "interactiveOnly": true,
+    "maxCandidates": 5
+  }
+}
+```
+
+Browser Assist 的输出边界：
+
+- 插件返回 `page / viewport / browser / matches`
+- 插件返回 `browser.contentLeftOnScreen` / `contentTopOnScreen`
+- 插件不做 screen 坐标最终映射
+- daemon 负责把 `clickablePoint` 映射成桌面绝对坐标
+
+推荐浏览器操作链路：
+
+1. `browser-open-url`
+2. `browser-assist-status`
+3. `browser-assist-locate`
+4. 读取 `mapped.screenCandidates[*].screenPoint`
+5. `click`
+6. `observation/latest.*?mode=grid` 仅用于确认点击结果
+
+也就是说：
+
+- Browser Assist 负责“找在哪”
+- daemon 负责“算到哪”
+- `agent-computer click` 负责“点下去”
+- `grid` 默认不再负责浏览器页面的前置定位，只负责事后验证
+
+快速 roundtrip 检查：
+
+```powershell
+.\scripts\test_browser_assist_roundtrip.ps1
+.\scripts\test_browser_assist_roundtrip.ps1 -RequestFile .\docs\examples\browser-assist-request.json
+```

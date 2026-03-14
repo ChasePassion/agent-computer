@@ -128,8 +128,8 @@ def _observation_url_bundle(*, base_url: str, token: str) -> dict[str, str]:
         "base_url": normalized_base_url,
         "live_url": f"{normalized_base_url}/live?token={token}",
         "mouse_url": f"{normalized_base_url}/observation/mouse.json?token={token}",
-        "preview_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=preview",
-        "preview_meta_url": f"{normalized_base_url}/observation/latest.json?token={token}&mode=preview",
+        "preview_image_url": f"{normalized_base_url}/live/frame.jpg?token={token}&mode=preview",
+        "preview_meta_url": f"{normalized_base_url}/live/frame.json?token={token}&mode=preview",
         "grid_image_url": f"{normalized_base_url}/observation/latest.jpg?token={token}&mode=grid",
         "grid_meta_url": f"{normalized_base_url}/observation/latest.json?token={token}&mode=grid",
     }
@@ -162,8 +162,6 @@ def build_observation_urls_manifest(
         "model_default_image_url": local["grid_image_url"],
         "model_default_meta_url": local["grid_meta_url"],
         "model_mouse_url": local["mouse_url"],
-        "model_preview_image_url": local["preview_image_url"],
-        "model_preview_meta_url": local["preview_meta_url"],
     }
 
     if public_base:
