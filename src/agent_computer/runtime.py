@@ -9,6 +9,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 OBSERVATION_DIR = ARTIFACTS_DIR / "observation"
+LIVE_OUTPUT_DIR = ARTIFACTS_DIR / "live-output"
 AGENT_DIR = PROJECT_ROOT / ".agent"
 DEFAULT_HOST = os.getenv("AGENT_COMPUTER_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("AGENT_COMPUTER_PORT", "37688"))
@@ -21,11 +22,17 @@ DEFAULT_OBSERVATION_RETENTION_DAYS = int(os.getenv("AGENT_COMPUTER_OBSERVATION_R
 DEFAULT_OBSERVATION_RETENTION_MAX_FILES = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_MAX_FILES", "200"))
 DEFAULT_OBSERVATION_PUBLIC_BASE_URL = os.getenv("AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL", "").strip()
 DEFAULT_BROWSER_ASSIST_WS_PATH = os.getenv("AGENT_COMPUTER_BROWSER_ASSIST_WS_PATH", "/ws/browser-assist")
+DEFAULT_CODEX_HOME = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex")))
+DEFAULT_CODEX_SESSION_POLL_INTERVAL_SEC = float(os.getenv("AGENT_COMPUTER_CODEX_SESSION_POLL_INTERVAL_SEC", "0.75"))
+DEFAULT_LIVE_OUTPUT_MAX_ITEMS = int(os.getenv("AGENT_COMPUTER_LIVE_OUTPUT_MAX_ITEMS", "12"))
+DEFAULT_LIVE_OUTPUT_MAX_CHARS = int(os.getenv("AGENT_COMPUTER_LIVE_OUTPUT_MAX_CHARS", "6000"))
+DEFAULT_LIVE_OUTPUT_STALE_AFTER_SEC = int(os.getenv("AGENT_COMPUTER_LIVE_OUTPUT_STALE_AFTER_SEC", "15"))
 
 
 def ensure_runtime_dirs() -> None:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     OBSERVATION_DIR.mkdir(parents=True, exist_ok=True)
+    LIVE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -97,6 +104,11 @@ def preview_latest_path() -> Path:
 def grid_latest_path() -> Path:
     ensure_runtime_dirs()
     return OBSERVATION_DIR / "grid_latest.jpg"
+
+
+def live_output_latest_path() -> Path:
+    ensure_runtime_dirs()
+    return LIVE_OUTPUT_DIR / "latest.json"
 
 
 def _normalize_base_url(value: str) -> str:

@@ -74,3 +74,19 @@ class PressRequest(BaseModel):
 
 class HotkeyRequest(BaseModel):
     keys: list[str]
+
+
+class LiveOutputEventRequest(BaseModel):
+    kind: Literal["commentary", "final", "tool"] = "commentary"
+    text: str
+    session_id: str | None = None
+    status: Literal["running", "idle", "no_output"] | None = None
+    created_at: str | None = None
+    source_rollout_path: str | None = None
+
+
+class LiveOutputStatusRequest(BaseModel):
+    value: Literal["running", "idle", "no_output"]
+    session_id: str | None = None
+    updated_at: str | None = None
+    source_rollout_path: str | None = None

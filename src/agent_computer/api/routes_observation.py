@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from agent_computer.actions import mouse_position
 from agent_computer.api.deps import get_registry
+from agent_computer.api.live_page import render_live_page
 from agent_computer.services.registry import ServiceRegistry
 
 router = APIRouter(tags=["observation"])
@@ -42,156 +43,7 @@ def live_page(
     mode: str | None = Query(default=None),
 ) -> HTMLResponse:
     initial_mode = _normalize_mode(mode, default="preview")
-    html = f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Computer Live</title>
-  <style>
-    :root {{
-      color-scheme: dark;
-      --bg: #0f1115;
-      --panel: #171a21;
-      --muted: #a6adbb;
-      --text: #eef2f7;
-      --accent: #4dd4ac;
-      --border: #272d38;
-    }}
-    body {{
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.4 Consolas, "Courier New", monospace;
-    }}
-    .bar {{
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: rgba(15, 17, 21, 0.92);
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(12px);
-    }}
-    .status {{
-      display: flex;
-      gap: 14px;
-      color: var(--muted);
-      flex-wrap: wrap;
-    }}
-    .controls {{
-      display: flex;
-      gap: 8px;
-    }}
-    button {{
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--text);
-      padding: 8px 12px;
-      cursor: pointer;
-      border-radius: 8px;
-    }}
-    button.active {{
-      border-color: var(--accent);
-      color: var(--accent);
-    }}
-    .frame-wrap {{
-      padding: 16px;
-    }}
-    img {{
-      display: block;
-      width: 100%;
-      height: auto;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: #0b0d11;
-    }}
-  </style>
-</head>
-<body>
-  <div class="bar">
-    <div class="status">
-      <span>Mode: <strong id="mode-label">{initial_mode}</strong></span>
-      <span>Updated: <strong id="updated-label">warming up</strong></span>
-      <span>Resolution: <strong id="resolution-label">-</strong></span>
-      <span>Cursor: <strong id="cursor-label">-</strong></span>
-    </div>
-    <div class="controls">
-      <button id="preview-btn">Preview</button>
-      <button id="grid-btn">Grid</button>
-    </div>
-  </div>
-  <div class="frame-wrap">
-    <img id="frame" alt="live observation frame">
-  </div>
-  <script>
-    const token = {token!r};
-    let mode = {initial_mode!r};
-    let lastFrameSeq = -1;
-    const frame = document.getElementById("frame");
-    const modeLabel = document.getElementById("mode-label");
-    const updatedLabel = document.getElementById("updated-label");
-    const resolutionLabel = document.getElementById("resolution-label");
-    const cursorLabel = document.getElementById("cursor-label");
-    const previewBtn = document.getElementById("preview-btn");
-    const gridBtn = document.getElementById("grid-btn");
-
-    function updateButtons() {{
-      previewBtn.classList.toggle("active", mode === "preview");
-      gridBtn.classList.toggle("active", mode === "grid");
-      modeLabel.textContent = mode;
-    }}
-
-    function latestJsonUrl() {{
-      return `/live/frame.json?token=${{encodeURIComponent(token)}}&mode=${{encodeURIComponent(mode)}}`;
-    }}
-
-    async function poll() {{
-      try {{
-        const response = await fetch(latestJsonUrl(), {{ cache: "no-store" }});
-        if (!response.ok) {{
-          throw new Error(`HTTP ${{response.status}}`);
-        }}
-        const payload = await response.json();
-        updatedLabel.textContent = payload.updated_at || "-";
-        resolutionLabel.textContent = `${{payload.desktop_width || payload.width}}x${{payload.desktop_height || payload.height}}`;
-        const cursor = payload.mouse_position;
-        cursorLabel.textContent = cursor ? `(${{cursor.x}}, ${{cursor.y}})` : "-";
-        if (payload.frame_seq !== lastFrameSeq) {{
-          frame.src = `${{payload.image_url}}&ts=${{Date.now()}}`;
-          lastFrameSeq = payload.frame_seq;
-        }}
-      }} catch (error) {{
-        updatedLabel.textContent = "waiting";
-        cursorLabel.textContent = "-";
-      }}
-    }}
-
-    previewBtn.addEventListener("click", () => {{
-      mode = "preview";
-      lastFrameSeq = -1;
-      updateButtons();
-      poll();
-    }});
-
-    gridBtn.addEventListener("click", () => {{
-      mode = "grid";
-      lastFrameSeq = -1;
-      updateButtons();
-      poll();
-    }});
-
-    updateButtons();
-    poll();
-    setInterval(poll, 1000);
-  </script>
-</body>
-</html>"""
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=render_live_page(token=token, initial_mode=initial_mode))
 
 
 @router.get("/live/frame.jpg", name="live_observation_image")
@@ -221,18 +73,42 @@ def live_json(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> JSONResponse:
     normalized_mode = _normalize_mode(mode, default="grid")
-    payload = registry.observation.latest(normalized_mode)
-    if payload is None:
-        raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {normalized_mode}")
-    image_url = str(
-        request.url_for("live_observation_image").include_query_params(
+    response_payload = _build_live_frame_payload(
+        request=request,
+        token=token,
+        mode=normalized_mode,
+        registry=registry,
+    )
+    return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@router.get("/live/output.json")
+def live_output_json(
+    _: str = Depends(_require_token),
+    registry: ServiceRegistry = Depends(get_registry),
+) -> JSONResponse:
+    payload = registry.live_output.snapshot()
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@router.get("/live/state.json")
+def live_state_json(
+    request: Request,
+    token: str = Depends(_require_token),
+    mode: str | None = Query(default=None),
+    registry: ServiceRegistry = Depends(get_registry),
+) -> JSONResponse:
+    normalized_mode = _normalize_mode(mode, default="preview")
+    payload = {
+        "frame": _build_live_frame_payload(
+            request=request,
             token=token,
             mode=normalized_mode,
-        )
-    )
-    response_payload = dict(payload)
-    response_payload["image_url"] = image_url
-    return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+            registry=registry,
+        ),
+        "output": registry.live_output.snapshot(),
+    }
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 @router.get("/observation/latest.jpg", name="observation_latest_image")
@@ -288,3 +164,24 @@ def mouse_json(
         "origin": [0, 0],
     }
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+def _build_live_frame_payload(
+    *,
+    request: Request,
+    token: str,
+    mode: Literal["preview", "grid"],
+    registry: ServiceRegistry,
+) -> dict[str, object]:
+    payload = registry.observation.latest(mode)
+    if payload is None:
+        raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {mode}")
+    image_url = str(
+        request.url_for("live_observation_image").include_query_params(
+            token=token,
+            mode=mode,
+        )
+    )
+    response_payload = dict(payload)
+    response_payload["image_url"] = image_url
+    return response_payload
