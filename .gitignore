@@ -2,6 +2,10 @@
 .conda/
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
+.tmp-smoke/
 artifacts/
 .agent/observation.json
 .agent/observation.urls.json

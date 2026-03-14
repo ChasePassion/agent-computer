@@ -1,0 +1,39 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install Python
+        run: uv python install 3.11
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Smoke test wheel
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .tmp-smoke | Out-Null
+          Push-Location .tmp-smoke
+          uv run --isolated --no-project --with ../dist/*.whl python ../tests/smoke_test.py
+          Pop-Location
+
+      - name: Publish to PyPI
+        run: uv publish

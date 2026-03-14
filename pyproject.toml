@@ -3,11 +3,27 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-computer"
+name = "agent-computer-max"
 version = "0.1.0"
 description = "Windows desktop control and capture toolkit for AI agents."
 readme = "README.md"
 requires-python = ">=3.11"
+authors = [
+  { name = "ChasePassion" },
+]
+keywords = ["windows", "desktop", "automation", "agent", "codex", "observation"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+]
 dependencies = [
   "fastapi>=0.115.0",
   "httpx>=0.28.1",
@@ -15,9 +31,14 @@ dependencies = [
   "Pillow>=10.4.0",
   "pydantic>=2.9.0",
   "pyautogui>=0.9.54",
-  "pywin32>=308",
+  "pywin32>=308; platform_system == 'Windows'",
   "uvicorn>=0.32.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ChasePassion/agent-computer"
+Repository = "https://github.com/ChasePassion/agent-computer.git"
+Issues = "https://github.com/ChasePassion/agent-computer/issues"
 
 [project.scripts]
 agent-computer = "agent_computer.cli:main"

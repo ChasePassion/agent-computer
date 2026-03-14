@@ -2,6 +2,17 @@
 
 一个给 Codex 直接调用的 Windows 桌面原子工具集。
 
+发布后的安装方式：
+
+```powershell
+uv tool install agent-computer-max
+```
+
+安装后命令入口仍然是：
+
+- `agent-computer`
+- `agent-computer-daemon`
+
 现在它只保留纯桌面控制、Observation latest 与截图强化能力：
 
 - Observation latest preview / grid
