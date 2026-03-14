@@ -594,9 +594,7 @@ Browser Assist 配置文件位于：
   "query": {
     "text": "收藏",
     "role": "button",
-    "hint": "当前职位详情区域里的收藏按钮",
-    "selectorHint": null,
-    "index": 0
+    "hint": "当前职位详情区域里的收藏按钮"
   },
   "options": {
     "visibleOnly": true,

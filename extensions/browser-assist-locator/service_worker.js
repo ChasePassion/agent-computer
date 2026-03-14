@@ -2,15 +2,15 @@ importScripts("schemas.js");
 
 const CONFIG = Object.freeze({
   websocketUrl: "__BROWSER_ASSIST_WS_URL__",
-  daemonBaseUrl: "http://127.0.0.1:37688",
+  daemonBaseUrl: "__BROWSER_ASSIST_DAEMON_BASE_URL__",
   keepaliveMs: 20 * 1000,
   reconnectBaseMs: 1000,
-  reconnectMaxMs: 20 * 1000
+  reconnectMaxMs: 20 * 1000,
+  reconnectAlarmName: "browser-assist-reconnect"
 });
 
 let socket = null;
 let keepaliveTimer = null;
-let reconnectTimer = null;
 let reconnectAttempts = 0;
 let resolvedWebSocketUrl = null;
 
@@ -43,22 +43,32 @@ function startKeepalive() {
   }, CONFIG.keepaliveMs);
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer !== null) {
-    return;
+function configuredDaemonBaseUrl() {
+  if (CONFIG.daemonBaseUrl && !CONFIG.daemonBaseUrl.includes("__")) {
+    return CONFIG.daemonBaseUrl;
   }
+  return "http://127.0.0.1:37688";
+}
 
+function websocketBaseUrlForDaemon(daemonBaseUrl) {
+  const parsed = new URL(daemonBaseUrl);
+  const protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${parsed.host}`;
+}
+
+function clearResolvedWebSocketUrl() {
+  resolvedWebSocketUrl = null;
+}
+
+function clearReconnectAlarm() {
+  chrome.alarms.clear(CONFIG.reconnectAlarmName);
+}
+
+function scheduleReconnect() {
   const attempt = reconnectAttempts;
   const delay = Math.min(CONFIG.reconnectBaseMs * (2 ** attempt), CONFIG.reconnectMaxMs);
   const jitter = Math.floor(Math.random() * 300);
-
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectWebSocket().catch((error) => {
-      console.error("Browser Assist failed to reconnect websocket:", error);
-      scheduleReconnect();
-    });
-  }, delay + jitter);
+  chrome.alarms.create(CONFIG.reconnectAlarmName, { when: Date.now() + delay + jitter });
   reconnectAttempts += 1;
 }
 
@@ -130,7 +140,8 @@ async function resolveWebSocketUrl() {
     return resolvedWebSocketUrl;
   }
 
-  const response = await fetch(`${CONFIG.daemonBaseUrl}/browser-assist/status`, { cache: "no-store" });
+  const daemonBaseUrl = configuredDaemonBaseUrl();
+  const response = await fetch(`${daemonBaseUrl}/browser-assist/status`, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to fetch Browser Assist status: HTTP ${response.status}`);
   }
@@ -140,7 +151,7 @@ async function resolveWebSocketUrl() {
     throw new Error("Browser Assist status did not return a token.");
   }
 
-  resolvedWebSocketUrl = `ws://127.0.0.1:37688/ws/browser-assist?token=${encodeURIComponent(payload.token)}`;
+  resolvedWebSocketUrl = `${websocketBaseUrlForDaemon(daemonBaseUrl)}/ws/browser-assist?token=${encodeURIComponent(payload.token)}`;
   return resolvedWebSocketUrl;
 }
 
@@ -155,6 +166,7 @@ async function connectWebSocket() {
 
   socket.onopen = () => {
     reconnectAttempts = 0;
+    clearReconnectAlarm();
     sendEnvelope("hello", {
       extensionVersion: chrome.runtime.getManifest().version,
       browserName: "chromium",
@@ -170,6 +182,7 @@ async function connectWebSocket() {
   };
 
   socket.onerror = () => {
+    clearResolvedWebSocketUrl();
     if (socket) {
       socket.close();
     }
@@ -178,9 +191,21 @@ async function connectWebSocket() {
   socket.onclose = () => {
     socket = null;
     stopKeepalive();
+    clearResolvedWebSocketUrl();
     scheduleReconnect();
   };
 }
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== CONFIG.reconnectAlarmName) {
+    return;
+  }
+
+  connectWebSocket().catch((error) => {
+    console.error("Browser Assist failed to reconnect websocket:", error);
+    scheduleReconnect();
+  });
+});
 
 chrome.runtime.onInstalled.addListener(() => {
   connectWebSocket().catch((error) => {

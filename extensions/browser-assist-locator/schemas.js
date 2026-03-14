@@ -6,9 +6,7 @@
   const DEFAULT_QUERY = Object.freeze({
     text: null,
     role: "any",
-    hint: null,
-    selectorHint: null,
-    index: 0
+    hint: null
   });
 
   const DEFAULT_OPTIONS = Object.freeze({
@@ -30,7 +28,6 @@
     const options = { ...DEFAULT_OPTIONS, ...(raw?.options || {}) };
 
     query.role = typeof query.role === "string" ? query.role : "any";
-    query.index = clampInteger(query.index, 0, 0, 100);
 
     options.visibleOnly = Boolean(options.visibleOnly);
     options.interactiveOnly = Boolean(options.interactiveOnly);

@@ -12,8 +12,6 @@ class BrowserAssistQuery(BaseModel):
     text: str | None = None
     role: LocatorRole = "any"
     hint: str | None = None
-    selectorHint: str | None = None
-    index: int = Field(default=0, ge=0)
 
 
 class BrowserAssistOptions(BaseModel):
@@ -79,7 +77,6 @@ class BrowserAssistMatch(BaseModel):
     text: str
     role: LocatorRole | None = None
     tagName: str
-    selectorHint: str | None = None
     rect: BrowserAssistRect
     clickablePoint: BrowserAssistClickablePoint
 
