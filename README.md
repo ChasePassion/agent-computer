@@ -209,12 +209,12 @@ chrome://extensions/
 如果需要定位元素，推荐流程是：
 
 1. 先确保 daemon 与 Observation Layer 已启动
-2. Model 默认取 latest grid image，而不是直接看 `/live` 网页
+2. **必须**先通过 observation URL 读取 latest grid image；Model 默认取 latest grid image，而不是直接看 `/live` 网页
 3. 调用点击、滚动、输入等桌面动作
-4. 再读取最新的 latest grid image，确认状态并顺便读取下一步坐标
+4. 再通过 observation URL 读取最新的 latest grid image，确认状态并顺便读取下一步坐标
 5. 如此循环
 
-只有在 latest image 看不清楚当前状态、或你需要冻结一张更高确定性的静态图时，才额外使用手动截图做兜底观察。
+手动截图不是默认观察链路；**只有当 observation URL 无法使用、latest image 无法读取、或你明确需要冻结一张静态图时，才允许额外使用截图作为 backup 兜底观察。**
 如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
 
 补充约束：
@@ -398,17 +398,18 @@ agent-computer hotkey ctrl shift s
 2. 聚焦目标窗口，并确保目标窗口已经最大化
    推荐顺序：先 `focus`，再 `maximize`
 3. 开始操作之前，先阅读相关的 skill / 操作手册
-4. 用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
-5. Model 默认读取 `model_default_image_url`，也就是 latest grid image
+4. **必须优先**用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
+5. **必须优先**读取 `model_default_image_url`，也就是 latest grid image；不要把手动截图当作默认观察方式
 6. 如需确认 freshness，再读取 `model_default_meta_url`
 7. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
+   未先通过 observation URL 完成页面核对，不得声称已经确认结果或已经完成页面验证。
 8. 用 `click`、`scroll`、`paste`、`browser-open-url` 等原子动作执行业务步骤
-9. 再次读取 latest grid image，并顺便读取下一步坐标
+9. 再次通过 observation URL 读取 latest grid image，并顺便读取下一步坐标
 10. 如果点击之后没有出现预期结果，先读取当前鼠标坐标，并和 latest grid image 对照，优先确认是否存在坐标偏差
 11. 不要因为一次点击失败或页面异常就停止，继续思考并尝试其他可行路径，直到用户需求完成
 12. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
-13. 只有当 latest grid image 看不清楚时，才临时使用 `capture-preview`
-14. 只有当你需要冻结一张静态高精度网格图时，才使用 `capture-grid`
+13. 只有当 observation URL 无法使用、或 latest grid image 无法满足判断时，才临时使用 `capture-preview` 作为 backup
+14. 只有当 observation URL 无法使用且你需要冻结一张静态高精度网格图时，才使用 `capture-grid` 作为 backup
 
 ### 4.2 浏览器网页链路
 
@@ -508,7 +509,8 @@ manifest 位于：
 - `latest.json?mode=grid` 用于 freshness / frame meta
 - `latest.json?mode=grid` 中的 `mouse_position` 与当前 frame 对齐
 - `/observation/mouse.json` 用于读取当前鼠标即时坐标
-- `capture-preview` / `capture-grid` 只用于强化观察
+- observation URL 是默认且必须优先的观察入口
+- `capture-preview` / `capture-grid` 不是默认链路，只能在 observation URL 无法使用时作为 backup
 
 推荐拿 URL 的方式：
 
