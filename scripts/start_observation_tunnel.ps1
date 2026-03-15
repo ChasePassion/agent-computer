@@ -1,18 +1,44 @@
 param(
-    [string]$RelayHost = $(if ($env:AGENT_COMPUTER_RELAY_HOST) { $env:AGENT_COMPUTER_RELAY_HOST } else { $null }),
-    [string]$RelayUser = $(if ($env:AGENT_COMPUTER_RELAY_USER) { $env:AGENT_COMPUTER_RELAY_USER } else { $null }),
-    [string]$RelayPassword = $(if ($env:AGENT_COMPUTER_RELAY_PASSWORD) { $env:AGENT_COMPUTER_RELAY_PASSWORD } else { $null }),
-    [int]$SshPort = $(if ($env:AGENT_COMPUTER_RELAY_SSH_PORT) { [int]$env:AGENT_COMPUTER_RELAY_SSH_PORT } else { 22 }),
-    [int]$RelayPort = $(if ($env:AGENT_COMPUTER_RELAY_PORT) { [int]$env:AGENT_COMPUTER_RELAY_PORT } else { 43768 }),
-    [string]$LocalHost = $(if ($env:AGENT_COMPUTER_LOCAL_HOST) { $env:AGENT_COMPUTER_LOCAL_HOST } else { "127.0.0.1" }),
-    [int]$LocalPort = $(if ($env:AGENT_COMPUTER_LOCAL_PORT) { [int]$env:AGENT_COMPUTER_LOCAL_PORT } else { 37688 })
+    [string]$RelayHost = "",
+    [string]$RelayUser = "",
+    [string]$RelayPassword = "",
+    [int]$SshPort = 0,
+    [int]$RelayPort = 0,
+    [string]$LocalHost = "",
+    [int]$LocalPort = 0,
+    [string]$StatePath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $projectRoot "scripts\load_env.ps1")
 Import-ProjectEnv -ProjectRoot $projectRoot
-$statePath = Join-Path $projectRoot ".agent\observation.tunnel.state.json"
+if ([string]::IsNullOrWhiteSpace($RelayHost)) {
+    $RelayHost = $env:AGENT_COMPUTER_RELAY_HOST
+}
+if ([string]::IsNullOrWhiteSpace($RelayUser)) {
+    $RelayUser = $env:AGENT_COMPUTER_RELAY_USER
+}
+if ([string]::IsNullOrWhiteSpace($RelayPassword)) {
+    $RelayPassword = $env:AGENT_COMPUTER_RELAY_PASSWORD
+}
+if ($SshPort -le 0) {
+    $SshPort = if ($env:AGENT_COMPUTER_RELAY_SSH_PORT) { [int]$env:AGENT_COMPUTER_RELAY_SSH_PORT } else { 22 }
+}
+if ($RelayPort -le 0) {
+    $RelayPort = if ($env:AGENT_COMPUTER_RELAY_PORT) { [int]$env:AGENT_COMPUTER_RELAY_PORT } else { 43768 }
+}
+if ([string]::IsNullOrWhiteSpace($LocalHost)) {
+    $LocalHost = if ($env:AGENT_COMPUTER_LOCAL_HOST) { $env:AGENT_COMPUTER_LOCAL_HOST } else { "127.0.0.1" }
+}
+if ($LocalPort -le 0) {
+    $LocalPort = if ($env:AGENT_COMPUTER_LOCAL_PORT) { [int]$env:AGENT_COMPUTER_LOCAL_PORT } else { 37688 }
+}
+$statePath = if ([string]::IsNullOrWhiteSpace($StatePath)) {
+    Join-Path $projectRoot ".agent\observation.tunnel.state.json"
+} else {
+    [IO.Path]::GetFullPath((Join-Path $projectRoot $StatePath))
+}
 $localPythonExe = Join-Path $projectRoot ".conda\python.exe"
 $tunnelManagerScript = Join-Path $projectRoot "scripts\tunnel_manager.py"
 

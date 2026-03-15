@@ -5,12 +5,12 @@ import argparse
 import uvicorn
 
 from agent_computer.api import create_app
-from agent_computer.runtime import DEFAULT_HOST, DEFAULT_PORT
+from agent_computer.runtime import DEFAULT_BIND_HOST, DEFAULT_PORT
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agent-computer-daemon", description="Run the Agent Computer daemon.")
-    parser.add_argument("--host", default=DEFAULT_HOST, help="Bind host.")
+    parser.add_argument("--host", default=DEFAULT_BIND_HOST, help="Bind host.")
     parser.add_argument("--port", default=DEFAULT_PORT, type=int, help="Bind port.")
     parser.add_argument("--log-level", default="warning", help="Uvicorn log level.")
     return parser

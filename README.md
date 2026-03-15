@@ -4,7 +4,13 @@
 
 ## 0. Agent First Quickstart
 
-推荐顺序如下：
+当前推荐链路：
+
+- 本地 daemon 只监听 `127.0.0.1:37688`
+- 公网出口同时支持 `Funnel` 和 `Relay`
+- 统一入口是 `start_observation_public.ps1`
+
+3 分钟启动顺序如下：
 
 ```powershell
 npx skills add https://github.com/ChasePassion/agent-computer-skill
@@ -12,27 +18,66 @@ git clone https://github.com/ChasePassion/agent-computer.git
 cd agent-computer
 Copy-Item .env.example .env
 .\scripts\bootstrap.ps1
+.\scripts\start_observation_public.ps1 -Mode both
+```
+
+如果你只启用单一公网出口：
+
+```powershell
+.\scripts\start_observation_public.ps1 -Mode funnel
+.\scripts\start_observation_public.ps1 -Mode relay
+```
+
+只查看当前最终链接：
+
+```powershell
+.\scripts\show_observation_urls.ps1
+```
+
+停止 Funnel：
+
+```powershell
+.\scripts\stop_observation_funnel.ps1
 ```
 
 说明：
 
-- 安装skill这一步依赖 `Node.js` / `npx`
-- 如果当前机器没有 `npx`，先安装 Node.js 再继续
-- 如果需要远程 live，把维护者私下提供的服务器信息填进 `.env`
-- 出于安全原因，`.env` 不进 git，仓库只提供 `.env.example`
+- 安装 skill 依赖 `Node.js` / `npx`
+- 如果当前机器没有 `npx`，先安装 Node.js
+- 远程相关信息只放 `.env`
+- `.env` 不进 git，仓库只提供 `.env.example`
 
-- 如果 `.env` **不配置远程相关项**，就继续走本地模式
-- 如果 `.env` **配置了远程相关项**，observation / tunnel 会直接读取环境变量连接共享服务器
-- relay host / user / password / public base URL 这类敏感信息只放在 `.env`，不再写入 `.agent/*.json`
-
-bootstrap 完成后，常用命令是：
+bootstrap 完成后，最基础的本地命令仍然是：
 
 ```powershell
 .\windows-launcher.ps1 daemon start
 .\windows-launcher.ps1 observation urls
 ```
 
-这两个脚本的职责：
+本地默认语义现在分成两层：
+
+- `AGENT_COMPUTER_BIND_HOST` 用于 daemon 实际监听地址，默认兼容回退到 `AGENT_COMPUTER_HOST`
+- `AGENT_COMPUTER_HOST` 用于本机 CLI / health check / 本地 URL 生成，默认 `127.0.0.1`
+
+公网访问现在支持两种并存出口：
+
+- `Funnel`：通过 Tailscale 提供 `https://...ts.net`
+- `Relay`：通过你自己的共享服务器提供公网 URL
+
+推荐基础配置：
+
+```powershell
+AGENT_COMPUTER_HOST=127.0.0.1
+AGENT_COMPUTER_BIND_HOST=127.0.0.1
+AGENT_COMPUTER_PORT=37688
+AGENT_COMPUTER_PUBLIC_PREFERRED=funnel
+AGENT_COMPUTER_FUNNEL_HTTPS_PORT=443
+AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL=https://<your-relay-public-host>
+```
+
+这样本地 daemon 只监听回环地址，公网访问通过 Funnel 和 Relay 两条出口提供。
+
+`bootstrap.ps1` 的职责：
 
 - `scripts/bootstrap.ps1`
   - 创建或更新 `.conda`
@@ -81,10 +126,30 @@ AGENT_COMPUTER_RELAY_PASSWORD=<relay password>
 6. 启动本地 daemon 和反向隧道：
 
 ```powershell
-.\scripts\start_observation_local.ps1
-.\scripts\start_observation_tunnel.ps1
-.\scripts\show_observation_urls.ps1
+.\scripts\start_observation_public.ps1 -Mode relay
 ```
+
+如果你需要同时保留 Funnel 和 Relay 两条公网出口，直接运行：
+
+```powershell
+.\scripts\start_observation_public.ps1 -Mode both
+```
+
+命令会同时打印：
+
+```text
+Local
+Public Default
+Public Funnel
+Public Relay
+```
+
+如果你需要第二条独立 relay 路由，可以给 `start_observation_tunnel.ps1` 传不同的 `-RelayPort` 和 `-StatePath`，例如：
+
+```powershell
+.\scripts\start_observation_tunnel.ps1 -RelayPort 43769 -StatePath .agent\observation.wanglei.tunnel.state.json
+```
+
 
 如果设置了 `AGENT_COMPUTER_RELAY_PASSWORD`，隧道脚本会优先走仓库内置的非交互 Python/paramiko 模式，不必卡在 SSH 手动输密码。
 

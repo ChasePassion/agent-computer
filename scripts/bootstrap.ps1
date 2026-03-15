@@ -1,5 +1,6 @@
 param(
-    [string]$BindHost = "127.0.0.1",
+    [string]$BindHost = $(if ($env:AGENT_COMPUTER_BIND_HOST) { $env:AGENT_COMPUTER_BIND_HOST } elseif ($env:AGENT_COMPUTER_HOST) { $env:AGENT_COMPUTER_HOST } else { "127.0.0.1" }),
+    [string]$AccessHost = $(if ($env:AGENT_COMPUTER_HOST) { $env:AGENT_COMPUTER_HOST } else { "127.0.0.1" }),
     [int]$Port = 37688,
     [switch]$Json
 )
@@ -84,12 +85,12 @@ function Install-EditablePackage {
 }
 
 function Start-And-CheckDaemon {
-    & $windowsLauncher daemon start --host $BindHost --port $Port | Out-Null
+    & $windowsLauncher daemon start --bind-host $BindHost --host $AccessHost --port $Port | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start daemon."
     }
 
-    $urlsJson = & $windowsLauncher observation urls --host $BindHost --port $Port --json
+    $urlsJson = & $windowsLauncher observation urls --host $AccessHost --port $Port --json
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to generate observation URLs."
     }
@@ -132,7 +133,8 @@ $payload = [ordered]@{
     conda_status = $condaStatus
     editable_install = $true
     daemon_ready = $true
-    daemon_host = $BindHost
+    daemon_host = $AccessHost
+    daemon_bind_host = $BindHost
     daemon_port = $Port
     observation_urls_path = Join-Path $agentDir "observation.urls.json"
     remote_env = $remoteConfigStatus
@@ -149,7 +151,8 @@ if ($Json) {
 Write-Host "Bootstrap completed."
 Write-Host "Project root: $projectRoot"
 Write-Host "Conda env: $($payload.conda_env)"
-Write-Host "Daemon: http://$BindHost`:$Port"
+Write-Host "Daemon bind: http://$BindHost`:$Port"
+Write-Host "Daemon access: http://$AccessHost`:$Port"
 Write-Host "Bootstrap status: $statusPath"
 if ($remoteConfigStatus.configured) {
     Write-Host "Remote observation config: loaded from .env"

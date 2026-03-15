@@ -13,6 +13,7 @@ $localCliExe = Join-Path $localEnvRoot "Scripts\agent-computer.exe"
 $localDaemonExe = Join-Path $localEnvRoot "Scripts\agent-computer-daemon.exe"
 $localPythonExe = Join-Path $localEnvRoot "python.exe"
 $daemonHost = if ($env:AGENT_COMPUTER_HOST) { $env:AGENT_COMPUTER_HOST } else { "127.0.0.1" }
+$daemonBindHost = if ($env:AGENT_COMPUTER_BIND_HOST) { $env:AGENT_COMPUTER_BIND_HOST } else { $daemonHost }
 $daemonPort = if ($env:AGENT_COMPUTER_PORT) { [int]$env:AGENT_COMPUTER_PORT } else { 37688 }
 $daemonStartupTimeoutSec = if ($env:AGENT_COMPUTER_STARTUP_TIMEOUT_SEC) {
     [double]$env:AGENT_COMPUTER_STARTUP_TIMEOUT_SEC
@@ -64,7 +65,7 @@ function Get-DaemonHealth {
 }
 
 function Start-DaemonBackground {
-    $daemonArgs = @("--host", $daemonHost, "--port", [string]$daemonPort)
+    $daemonArgs = @("--host", $daemonBindHost, "--port", [string]$daemonPort)
 
     if (Test-Path $localDaemonExe) {
         Start-Process -FilePath $localDaemonExe -ArgumentList $daemonArgs -WorkingDirectory $projectRoot -WindowStyle Hidden | Out-Null

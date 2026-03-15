@@ -28,7 +28,7 @@ from agent_computer.models.requests import (
     ScrollRequest,
     TypeRequest,
 )
-from agent_computer.runtime import observation_token_path, read_json, write_observation_urls_manifest
+from agent_computer.runtime import DEFAULT_BIND_HOST, observation_token_path, read_json, write_observation_urls_manifest
 
 
 def _print_json(payload: Any) -> None:
@@ -62,12 +62,26 @@ def _print_observation_urls(payload: dict[str, Any]) -> None:
     public_bundle = payload.get("public")
     if isinstance(public_bundle, dict):
         print("")
-        print("Public:")
+        default_name = str(payload.get("public_default_name", "public")).strip()
+        print(f"Public Default ({default_name}):")
         print(f"  Live: {payload['public_human_live_url']}")
         print(f"  Preview Image: {payload['public_human_preview_url']}")
         print(f"  Grid Image: {payload['public_human_grid_url']}")
         print(f"  Grid Meta: {payload['public_model_default_meta_url']}")
         print(f"  Mouse: {payload['public_model_mouse_url']}")
+
+    public_variants = payload.get("public_variants")
+    if isinstance(public_variants, dict):
+        for name, bundle in public_variants.items():
+            if not isinstance(bundle, dict):
+                continue
+            print("")
+            print(f"Public {name.capitalize()}:")
+            print(f"  Live: {bundle['live_url']}")
+            print(f"  Preview Image: {bundle['preview_image_url']}")
+            print(f"  Grid Image: {bundle['grid_image_url']}")
+            print(f"  Grid Meta: {bundle['grid_meta_url']}")
+            print(f"  Mouse: {bundle['mouse_url']}")
 
 
 def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
@@ -187,10 +201,10 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
 
 
 def _handle_daemon(args: argparse.Namespace) -> None:
-    client = DaemonClient(host=args.host, port=args.port)
+    client = DaemonClient(host=args.host, bind_host=getattr(args, "bind_host", DEFAULT_BIND_HOST), port=args.port)
 
     if args.daemon_command == "run":
-        daemon_argv = ["--host", args.host, "--port", str(args.port), "--log-level", args.log_level]
+        daemon_argv = ["--host", args.bind_host, "--port", str(args.port), "--log-level", args.log_level]
         daemon_main(daemon_argv)
         return
 
@@ -456,8 +470,11 @@ def build_parser() -> argparse.ArgumentParser:
         parser_item = daemon_subparsers.add_parser(subcommand)
         parser_item.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
         parser_item.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
+        if subcommand == "start":
+            parser_item.add_argument("--bind-host", default=DEFAULT_BIND_HOST, help="Daemon bind host.")
     daemon_run_parser = daemon_subparsers.add_parser("run")
     daemon_run_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
+    daemon_run_parser.add_argument("--bind-host", default=DEFAULT_BIND_HOST, help="Daemon bind host.")
     daemon_run_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
     daemon_run_parser.add_argument("--log-level", default="warning", help="Daemon log level.")
 

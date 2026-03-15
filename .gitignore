@@ -9,8 +9,12 @@ dist/
 artifacts/
 .agent/bootstrap.status.json
 .agent/observation.json
+.agent/observation.funnel.json
 .agent/observation.urls.json
 .agent/observation.remote.json
 .agent/observation.tunnel.state.json
+.agent/observation.*.tunnel.state.json
+.agent/observation.tunnel.stdout.log
+.agent/observation.tunnel.stderr.log
 .agent/browser_assist.json
 .agent/AGENTS.md

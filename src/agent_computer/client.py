@@ -8,7 +8,15 @@ from typing import Any
 
 import httpx
 
-from agent_computer.runtime import DEFAULT_HOST, DEFAULT_HTTP_TIMEOUT_SEC, DEFAULT_PORT, DEFAULT_STARTUP_TIMEOUT_SEC, PROJECT_ROOT, daemon_base_url
+from agent_computer.runtime import (
+    DEFAULT_BIND_HOST,
+    DEFAULT_HOST,
+    DEFAULT_HTTP_TIMEOUT_SEC,
+    DEFAULT_PORT,
+    DEFAULT_STARTUP_TIMEOUT_SEC,
+    PROJECT_ROOT,
+    daemon_base_url,
+)
 
 
 class DaemonClient:
@@ -16,11 +24,13 @@ class DaemonClient:
         self,
         *,
         host: str = DEFAULT_HOST,
+        bind_host: str = DEFAULT_BIND_HOST,
         port: int = DEFAULT_PORT,
         timeout_sec: float = DEFAULT_HTTP_TIMEOUT_SEC,
         startup_timeout_sec: float = DEFAULT_STARTUP_TIMEOUT_SEC,
     ) -> None:
         self.host = host
+        self.bind_host = bind_host
         self.port = port
         self.base_url = daemon_base_url(host, port)
         self.timeout_sec = timeout_sec
@@ -51,7 +61,7 @@ class DaemonClient:
             "-m",
             "agent_computer.daemon",
             "--host",
-            self.host,
+            self.bind_host,
             "--port",
             str(self.port),
         ]

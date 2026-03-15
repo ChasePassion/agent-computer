@@ -12,6 +12,7 @@ OBSERVATION_DIR = ARTIFACTS_DIR / "observation"
 LIVE_OUTPUT_DIR = ARTIFACTS_DIR / "live-output"
 AGENT_DIR = PROJECT_ROOT / ".agent"
 DEFAULT_HOST = os.getenv("AGENT_COMPUTER_HOST", "127.0.0.1")
+DEFAULT_BIND_HOST = os.getenv("AGENT_COMPUTER_BIND_HOST", DEFAULT_HOST)
 DEFAULT_PORT = int(os.getenv("AGENT_COMPUTER_PORT", "37688"))
 DEFAULT_STARTUP_TIMEOUT_SEC = float(os.getenv("AGENT_COMPUTER_STARTUP_TIMEOUT_SEC", "15"))
 DEFAULT_HTTP_TIMEOUT_SEC = float(os.getenv("AGENT_COMPUTER_HTTP_TIMEOUT_SEC", "180"))
@@ -21,6 +22,8 @@ DEFAULT_OBSERVATION_JPEG_QUALITY = int(os.getenv("AGENT_COMPUTER_OBSERVATION_JPE
 DEFAULT_OBSERVATION_RETENTION_DAYS = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_DAYS", "7"))
 DEFAULT_OBSERVATION_RETENTION_MAX_FILES = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_MAX_FILES", "200"))
 DEFAULT_OBSERVATION_PUBLIC_BASE_URL = os.getenv("AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL", "").strip()
+DEFAULT_PUBLIC_PREFERRED = os.getenv("AGENT_COMPUTER_PUBLIC_PREFERRED", "funnel").strip().lower() or "funnel"
+DEFAULT_FUNNEL_HTTPS_PORT = int(os.getenv("AGENT_COMPUTER_FUNNEL_HTTPS_PORT", "443"))
 DEFAULT_BROWSER_ASSIST_WS_PATH = os.getenv("AGENT_COMPUTER_BROWSER_ASSIST_WS_PATH", "/ws/browser-assist")
 DEFAULT_CODEX_HOME = Path(os.getenv("CODEX_HOME", str(Path.home() / ".codex")))
 DEFAULT_CODEX_SESSION_POLL_INTERVAL_SEC = float(os.getenv("AGENT_COMPUTER_CODEX_SESSION_POLL_INTERVAL_SEC", "0.75"))
@@ -91,6 +94,16 @@ def observation_urls_path() -> Path:
     return AGENT_DIR / "observation.urls.json"
 
 
+def observation_funnel_state_path() -> Path:
+    ensure_runtime_dirs()
+    return AGENT_DIR / "observation.funnel.json"
+
+
+def observation_tunnel_state_path() -> Path:
+    ensure_runtime_dirs()
+    return AGENT_DIR / "observation.tunnel.state.json"
+
+
 def browser_assist_config_path() -> Path:
     ensure_runtime_dirs()
     return AGENT_DIR / "browser_assist.json"
@@ -115,9 +128,50 @@ def _normalize_base_url(value: str) -> str:
     return value.strip().rstrip("/")
 
 
-def _read_public_base_url() -> str | None:
-    if DEFAULT_OBSERVATION_PUBLIC_BASE_URL:
+def _read_json_if_exists(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = read_json(path)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _read_funnel_public_base_url() -> str | None:
+    payload = _read_json_if_exists(observation_funnel_state_path())
+    value = str(payload.get("public_base_url", "")).strip() if payload else ""
+    return _normalize_base_url(value) if value else None
+
+
+def _read_relay_public_base_url() -> str | None:
+    if not DEFAULT_OBSERVATION_PUBLIC_BASE_URL:
+        return None
+    payload = _read_json_if_exists(observation_tunnel_state_path())
+    if payload and payload.get("cleanup_pending") is False:
         return _normalize_base_url(DEFAULT_OBSERVATION_PUBLIC_BASE_URL)
+    return None
+
+
+def _read_public_endpoints() -> dict[str, str]:
+    endpoints: dict[str, str] = {}
+    funnel_base = _read_funnel_public_base_url()
+    if funnel_base:
+        endpoints["funnel"] = funnel_base
+    relay_base = _read_relay_public_base_url()
+    if relay_base:
+        endpoints["relay"] = relay_base
+    return endpoints
+
+
+def _pick_default_public_endpoint(public_endpoints: dict[str, str]) -> tuple[str, str] | None:
+    preferred = DEFAULT_PUBLIC_PREFERRED
+    if preferred in public_endpoints:
+        return preferred, public_endpoints[preferred]
+    if "funnel" in public_endpoints:
+        return "funnel", public_endpoints["funnel"]
+    if "relay" in public_endpoints:
+        return "relay", public_endpoints["relay"]
     return None
 
 
@@ -142,7 +196,10 @@ def build_observation_urls_manifest(
     public_base_url: str | None = None,
 ) -> dict[str, Any]:
     local = _observation_url_bundle(base_url=daemon_base_url(host, port), token=token)
-    public_base = _normalize_base_url(public_base_url) if public_base_url else _read_public_base_url()
+    public_endpoints = _read_public_endpoints()
+    if public_base_url:
+        public_endpoints["relay"] = _normalize_base_url(public_base_url)
+    default_public_choice = _pick_default_public_endpoint(public_endpoints)
 
     manifest: dict[str, Any] = {
         "token": token,
@@ -154,6 +211,7 @@ def build_observation_urls_manifest(
             "model_mouse_url": local["mouse_url"],
         },
         "local": local,
+        "public_variants": {},
         "human_default_url": local["live_url"],
         "human_live_url": local["live_url"],
         "human_preview_url": local["preview_image_url"],
@@ -163,15 +221,32 @@ def build_observation_urls_manifest(
         "model_mouse_url": local["mouse_url"],
     }
 
-    if public_base:
-        public = _observation_url_bundle(base_url=public_base, token=token)
+    for name, base_url in public_endpoints.items():
+        bundle = _observation_url_bundle(base_url=base_url, token=token)
+        manifest["public_variants"][name] = bundle
+        manifest[f"public_{name}"] = bundle
+
+    if default_public_choice:
+        default_public_name, default_public_base = default_public_choice
+        public = _observation_url_bundle(base_url=default_public_base, token=token)
         manifest["public"] = public
+        manifest["public_default_name"] = default_public_name
         manifest["public_human_live_url"] = public["live_url"]
         manifest["public_human_preview_url"] = public["preview_image_url"]
         manifest["public_human_grid_url"] = public["grid_image_url"]
         manifest["public_model_default_image_url"] = public["grid_image_url"]
         manifest["public_model_default_meta_url"] = public["grid_meta_url"]
         manifest["public_model_mouse_url"] = public["mouse_url"]
+        manifest["defaults"] = {
+            "human_live_url": public["live_url"],
+            "model_image_url": public["grid_image_url"],
+            "model_meta_url": public["grid_meta_url"],
+            "model_mouse_url": public["mouse_url"],
+        }
+        manifest["human_default_url"] = public["live_url"]
+        manifest["model_default_image_url"] = public["grid_image_url"]
+        manifest["model_default_meta_url"] = public["grid_meta_url"]
+        manifest["model_mouse_url"] = public["mouse_url"]
 
     return manifest
 
