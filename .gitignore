@@ -11,5 +11,6 @@ artifacts/
 .agent/observation.json
 .agent/observation.urls.json
 .agent/observation.remote.json
+.agent/observation.tunnel.state.json
 .agent/browser_assist.json
 .agent/AGENTS.md

@@ -1,68 +1,52 @@
 param(
-    [string]$RelayHost,
-    [string]$RelayUser,
+    [string]$RelayHost = $(if ($env:AGENT_COMPUTER_RELAY_HOST) { $env:AGENT_COMPUTER_RELAY_HOST } else { $null }),
+    [string]$RelayUser = $(if ($env:AGENT_COMPUTER_RELAY_USER) { $env:AGENT_COMPUTER_RELAY_USER } else { $null }),
     [string]$RelayPassword = $(if ($env:AGENT_COMPUTER_RELAY_PASSWORD) { $env:AGENT_COMPUTER_RELAY_PASSWORD } else { $null }),
-    [int]$SshPort = 22,
-    [int]$RelayPort = 43768,
-    [string]$LocalHost = "127.0.0.1",
-    [int]$LocalPort = 37688
+    [int]$SshPort = $(if ($env:AGENT_COMPUTER_RELAY_SSH_PORT) { [int]$env:AGENT_COMPUTER_RELAY_SSH_PORT } else { 22 }),
+    [int]$RelayPort = $(if ($env:AGENT_COMPUTER_RELAY_PORT) { [int]$env:AGENT_COMPUTER_RELAY_PORT } else { 43768 }),
+    [string]$LocalHost = $(if ($env:AGENT_COMPUTER_LOCAL_HOST) { $env:AGENT_COMPUTER_LOCAL_HOST } else { "127.0.0.1" }),
+    [int]$LocalPort = $(if ($env:AGENT_COMPUTER_LOCAL_PORT) { [int]$env:AGENT_COMPUTER_LOCAL_PORT } else { 37688 })
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $projectRoot "scripts\load_env.ps1")
 Import-ProjectEnv -ProjectRoot $projectRoot
-$configPath = Join-Path $projectRoot ".agent\observation.remote.json"
+$statePath = Join-Path $projectRoot ".agent\observation.tunnel.state.json"
 $localPythonExe = Join-Path $projectRoot ".conda\python.exe"
-$reverseTunnelScript = Join-Path $projectRoot "scripts\reverse_ssh_tunnel.py"
-
-if (Test-Path $configPath) {
-    $config = Get-Content $configPath -Raw | ConvertFrom-Json
-    if (-not $RelayHost -and $config.relay_host) { $RelayHost = [string]$config.relay_host }
-    if (-not $RelayUser -and $config.relay_user) { $RelayUser = [string]$config.relay_user }
-    if (-not $RelayPassword -and $config.relay_password) { $RelayPassword = [string]$config.relay_password }
-    if ($PSBoundParameters.ContainsKey("SshPort") -eq $false -and $config.ssh_port) { $SshPort = [int]$config.ssh_port }
-    if ($PSBoundParameters.ContainsKey("RelayPort") -eq $false -and $config.relay_port) { $RelayPort = [int]$config.relay_port }
-    if ($PSBoundParameters.ContainsKey("LocalHost") -eq $false -and $config.local_host) { $LocalHost = [string]$config.local_host }
-    if ($PSBoundParameters.ContainsKey("LocalPort") -eq $false -and $config.local_port) { $LocalPort = [int]$config.local_port }
-}
+$tunnelManagerScript = Join-Path $projectRoot "scripts\tunnel_manager.py"
 
 if (-not $RelayHost) {
-    throw "Missing RelayHost. Pass -RelayHost or create .agent/observation.remote.json."
+    throw "Missing RelayHost. Pass -RelayHost or set AGENT_COMPUTER_RELAY_HOST in .env."
 }
 
 if (-not $RelayUser) {
-    throw "Missing RelayUser. Pass -RelayUser or create .agent/observation.remote.json."
+    throw "Missing RelayUser. Pass -RelayUser or set AGENT_COMPUTER_RELAY_USER in .env."
 }
 
 $target = "{0}@{1}" -f $RelayUser, $RelayHost
-$remoteSpec = "127.0.0.1:{0}:{1}:{2}" -f $RelayPort, $LocalHost, $LocalPort
 
-if (-not [string]::IsNullOrWhiteSpace($RelayPassword)) {
-    if (-not (Test-Path $localPythonExe)) {
-        throw "Local Python environment not found at $localPythonExe. Run scripts/bootstrap.ps1 first."
-    }
-
-    & $localPythonExe $reverseTunnelScript `
-        --relay-host $RelayHost `
-        --relay-user $RelayUser `
-        --relay-password $RelayPassword `
-        --ssh-port $SshPort `
-        --remote-port $RelayPort `
-        --local-host $LocalHost `
-        --local-port $LocalPort
-    exit $LASTEXITCODE
+if (-not (Test-Path $localPythonExe)) {
+    throw "Local Python environment not found at $localPythonExe. Run scripts/bootstrap.ps1 first."
 }
 
-Write-Host "Opening reverse SSH tunnel to $target ..."
-Write-Host "Remote: 127.0.0.1:$RelayPort -> Local: $LocalHost`:$LocalPort"
-Write-Host ""
-Write-Host "Keep this window open while you need remote access."
-Write-Host "If SSH asks for a password, use the relay password that was provided out-of-band."
+Write-Host "Starting transactional observation tunnel to $target ..."
 
-ssh -N `
-    -p $SshPort `
-    -o ServerAliveInterval=30 `
-    -o ExitOnForwardFailure=yes `
-    -R $remoteSpec `
-    $target
+$pythonArgs = @(
+    $tunnelManagerScript
+    "--relay-host", $RelayHost
+    "--relay-user", $RelayUser
+    "--ssh-port", $SshPort
+    "--remote-port", $RelayPort
+    "--local-host", $LocalHost
+    "--local-port", $LocalPort
+    "--state-path", $statePath
+)
+
+if (-not [string]::IsNullOrWhiteSpace($RelayPassword)) {
+    $pythonArgs += @("--relay-password", $RelayPassword)
+}
+
+& $localPythonExe @pythonArgs
+
+exit $LASTEXITCODE

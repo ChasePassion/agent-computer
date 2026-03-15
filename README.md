@@ -21,16 +21,9 @@ Copy-Item .env.example .env
 - 如果需要远程 live，把维护者私下提供的服务器信息填进 `.env`
 - 出于安全原因，`.env` 不进 git，仓库只提供 `.env.example`
 
-模式切换规则：
-
-- 如果 `.env` **不配置远程相关项**，就继续走本地模式 / 原有模式
-- 如果 `.env` **配置了远程相关项**，`bootstrap.ps1` 会写入 `.agent/observation.remote.json`，后续 observation / tunnel 会走远程共享服务器
-- 如果你本地已经存在旧的 `.agent/observation.remote.json`，而 `.env` 没有提供新的远程项，脚本会继续沿用那份已有配置
-
-也就是说：
-
-- 不配远程 `.env`：默认还是本地用
-- 配了远程 `.env`：就切到共享服务器用
+- 如果 `.env` **不配置远程相关项**，就继续走本地模式
+- 如果 `.env` **配置了远程相关项**，observation / tunnel 会直接读取环境变量连接共享服务器
+- relay host / user / password / public base URL 这类敏感信息只放在 `.env`，不再写入 `.agent/*.json`
 
 bootstrap 完成后，常用命令是：
 
@@ -50,11 +43,10 @@ bootstrap 完成后，常用命令是：
 bootstrap 结束后会生成：
 
 - `.agent/bootstrap.status.json`
-- `.agent/observation.remote.json`
 
-agent 下次进入仓库时，可以先看这个文件判断本地是否已经初始化完成。
+agent 下次进入仓库时，可以先看这个文件判断本地是否已经初始化完成。敏感远程配置不会写入这个状态文件。
 
-如果在运行 `bootstrap.ps1` 前已经在 `.env` 里写了下面这些值，bootstrap 会自动生成 `.agent/observation.remote.json`：
+如果在运行 `bootstrap.ps1` 前已经在 `.env` 里写了下面这些值，后续脚本会直接从环境变量读取：
 
 - `AGENT_COMPUTER_RELAY_HOST`
 - `AGENT_COMPUTER_RELAY_USER`
@@ -80,7 +72,7 @@ AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL=<public base url>
 AGENT_COMPUTER_RELAY_PASSWORD=<relay password>
 ```
 
-5. 运行 `.\scripts\bootstrap.ps1`，让本地写出 `.agent/observation.remote.json`：
+5. 运行 `.\scripts\bootstrap.ps1`：
 
 ```powershell
 .\scripts\bootstrap.ps1
@@ -536,14 +528,9 @@ agent-computer observation mouse --json
 如果需要远程访问：
 
 ```powershell
-.\scripts\start_observation_tunnel.ps1 -RelayHost <public-host> -RelayUser <user>
+.\scripts\start_observation_tunnel.ps1
 .\scripts\show_observation_urls.ps1
 ```
-
-Nginx 反向代理模板位于：
-
-- `deploy\nginx\agent-computer-observation.conf.example`
-- `deploy\observation.remote.json.example`
 
 ## 7. Browser Assist Locator
 

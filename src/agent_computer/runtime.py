@@ -118,20 +118,7 @@ def _normalize_base_url(value: str) -> str:
 def _read_public_base_url() -> str | None:
     if DEFAULT_OBSERVATION_PUBLIC_BASE_URL:
         return _normalize_base_url(DEFAULT_OBSERVATION_PUBLIC_BASE_URL)
-
-    config_path = observation_remote_config_path()
-    if not config_path.exists():
-        return None
-
-    try:
-        payload = read_json(config_path)
-    except (OSError, TypeError, ValueError):
-        return None
-
-    public_base_url = str(payload.get("public_base_url", "")).strip() if isinstance(payload, dict) else ""
-    if not public_base_url:
-        return None
-    return _normalize_base_url(public_base_url)
+    return None
 
 
 def _observation_url_bundle(*, base_url: str, token: str) -> dict[str, str]:
