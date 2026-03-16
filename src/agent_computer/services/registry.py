@@ -3,10 +3,12 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 
+from agent_computer.runtime import DEFAULT_CODEX_TARGET_CWD
 from agent_computer.services.action_service import ActionService
 from agent_computer.services.browser_assist_connection_manager import BrowserAssistConnectionManager
 from agent_computer.services.browser_assist_service import BrowserAssistService
 from agent_computer.services.capture_service import CaptureService
+from agent_computer.services.codex_managed_session_service import CodexManagedSessionService
 from agent_computer.services.codex_session_watcher import CodexSessionWatcher
 from agent_computer.services.live_output_service import LiveOutputService
 from agent_computer.services.navigation_service import NavigationService
@@ -23,6 +25,7 @@ class ServiceRegistry:
     observation: ObservationService
     live_output: LiveOutputService
     codex_session_watcher: CodexSessionWatcher
+    codex_managed_session: CodexManagedSessionService
     browser_assist_connections: BrowserAssistConnectionManager
     browser_assist: BrowserAssistService
     execution_lock: threading.RLock = field(default_factory=threading.RLock)
@@ -35,7 +38,12 @@ def create_service_registry(*, host: str, port: int) -> ServiceRegistry:
     navigation = NavigationService(session)
     observation = ObservationService(session, host=host, port=port)
     live_output = LiveOutputService(session)
-    codex_session_watcher = CodexSessionWatcher(live_output)
+    codex_session_watcher = CodexSessionWatcher(live_output, target_cwd=DEFAULT_CODEX_TARGET_CWD)
+    codex_managed_session = CodexManagedSessionService(
+        live_output,
+        codex_session_watcher,
+        target_cwd=DEFAULT_CODEX_TARGET_CWD,
+    )
     browser_assist_connections = BrowserAssistConnectionManager(session)
     browser_assist = BrowserAssistService(session, browser_assist_connections)
     return ServiceRegistry(
@@ -46,6 +54,7 @@ def create_service_registry(*, host: str, port: int) -> ServiceRegistry:
         observation=observation,
         live_output=live_output,
         codex_session_watcher=codex_session_watcher,
+        codex_managed_session=codex_managed_session,
         browser_assist_connections=browser_assist_connections,
         browser_assist=browser_assist,
     )

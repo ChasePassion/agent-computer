@@ -10,11 +10,12 @@ from agent_computer.api.routes_browser_assist import router as browser_assist_ro
 from agent_computer.api.routes_browser_assist_ws import router as browser_assist_ws_router
 from agent_computer.api.routes_capture import router as capture_router
 from agent_computer.api.routes_live_output import router as live_output_router
+from agent_computer.api.routes_live_session import router as live_session_router
 from agent_computer.api.routes_navigation import router as navigation_router
 from agent_computer.api.routes_observation import router as observation_router
 from agent_computer.api.routes_system import router as system_router
 from agent_computer.runtime import ensure_runtime_dirs
-from agent_computer.services import create_service_registry
+from agent_computer.services.registry import create_service_registry
 
 
 def create_app(*, host: str, port: int) -> FastAPI:
@@ -25,6 +26,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
         app.state.registry.observation.start()
         app.state.registry.codex_session_watcher.start()
         yield
+        app.state.registry.codex_managed_session.close()
         app.state.registry.codex_session_watcher.stop()
         app.state.registry.observation.stop()
 
@@ -38,6 +40,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.include_router(actions_router)
     app.include_router(observation_router)
     app.include_router(live_output_router)
+    app.include_router(live_session_router)
     app.include_router(browser_assist_router)
     app.include_router(browser_assist_ws_router)
 

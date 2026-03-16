@@ -66,7 +66,8 @@ $payload = [ordered]@{
     local_port = $LocalPort
 }
 
-$payload | ConvertTo-Json -Depth 8 | Set-Content -Path $statePath -Encoding utf8
+$payloadJson = $payload | ConvertTo-Json -Depth 8
+Write-Utf8NoBom -Path $statePath -Text $payloadJson
 
 Write-Host "Tailscale Funnel enabled."
 Write-Host "Public base URL: $publicBaseUrl"

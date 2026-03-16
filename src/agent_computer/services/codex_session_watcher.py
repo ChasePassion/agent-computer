@@ -58,11 +58,30 @@ class CodexSessionWatcher:
         with self._lock:
             self._thread = None
 
+    def current_session_snapshot(self) -> dict[str, str | None]:
+        status = self.live_output.snapshot().get("status")
+        with self._lock:
+            return {
+                "thread_id": self._current_session_id,
+                "turn_id": self._current_turn_id if status == "running" else None,
+                "rollout_path": None if self._current_rollout_path is None else str(self._current_rollout_path),
+            }
+
     def poll_once(self) -> None:
         candidate = self.discover_latest_rollout_file()
         if candidate is None:
             if self._current_rollout_path is None and self.live_output.snapshot().get("status") != "no_output":
-                self.live_output.set_status("no_output")
+                self.live_output.set_status(
+                    "no_output",
+                    session_mode="attach_readonly",
+                    thread_id=self._current_session_id,
+                    turn_id=self._current_turn_id,
+                    thread_status_type=None,
+                    thread_active_flags=[],
+                    can_send=True,
+                    can_interrupt=False,
+                    last_error=None,
+                )
             return
 
         if self._current_rollout_path != candidate:
@@ -104,6 +123,14 @@ class CodexSessionWatcher:
             session_id=session_id or rollout_path.stem,
             source_rollout_path=str(rollout_path),
             status="no_output",
+            session_mode="attach_readonly",
+            thread_id=session_id,
+            turn_id=None,
+            thread_status_type=None,
+            thread_active_flags=[],
+            can_send=True,
+            can_interrupt=False,
+            last_error=None,
         )
 
     def update_heartbeat(self, *, timestamp: str | None = None) -> None:
@@ -113,6 +140,14 @@ class CodexSessionWatcher:
             at=timestamp,
             session_id=session_id,
             source_rollout_path=source_rollout_path,
+            session_mode="attach_readonly",
+            thread_id=self._current_session_id,
+            turn_id=self._current_turn_id,
+            thread_status_type=None,
+            thread_active_flags=[],
+            can_send=True,
+            can_interrupt=False,
+            last_error=None,
         )
 
     def parse_line(self, line: str) -> None:
@@ -132,6 +167,17 @@ class CodexSessionWatcher:
                 session_meta_id = self._normalize_optional_text(meta_payload.get("id"))
                 if session_meta_id:
                     self._current_session_id = session_meta_id
+                    self.live_output.set_session_state(
+                        session_mode="attach_readonly",
+                        thread_id=session_meta_id,
+                        turn_id=self._current_turn_id,
+                        thread_status_type=None,
+                        thread_active_flags=[],
+                        can_send=True,
+                        can_interrupt=False,
+                        source_rollout_path=source_rollout_path,
+                        last_error=None,
+                    )
             return
 
         if root_type == "event_msg":
@@ -146,6 +192,14 @@ class CodexSessionWatcher:
                     source_rollout_path=source_rollout_path,
                     status="running",
                     timestamp=timestamp,
+                    session_mode="attach_readonly",
+                    thread_id=self._current_session_id,
+                    turn_id=self._current_turn_id,
+                    thread_status_type=None,
+                    thread_active_flags=[],
+                    can_send=True,
+                    can_interrupt=False,
+                    last_error=None,
                 )
                 return
             if event_type == "agent_message":
@@ -157,6 +211,14 @@ class CodexSessionWatcher:
                         created_at=timestamp,
                         session_id=self._current_turn_id or session_id,
                         source_rollout_path=source_rollout_path,
+                        session_mode="attach_readonly",
+                        thread_id=self._current_session_id,
+                        turn_id=self._current_turn_id,
+                        thread_status_type=None,
+                        thread_active_flags=[],
+                        can_send=True,
+                        can_interrupt=False,
+                        last_error=None,
                     )
                 return
             if event_type == "task_complete":
@@ -170,6 +232,14 @@ class CodexSessionWatcher:
                         status="idle",
                         session_id=current_turn_id,
                         source_rollout_path=source_rollout_path,
+                        session_mode="attach_readonly",
+                        thread_id=self._current_session_id,
+                        turn_id=current_turn_id,
+                        thread_status_type=None,
+                        thread_active_flags=[],
+                        can_send=True,
+                        can_interrupt=False,
+                        last_error=None,
                     )
                 else:
                     self.live_output.set_status(
@@ -178,6 +248,14 @@ class CodexSessionWatcher:
                         heartbeat_at=timestamp,
                         session_id=current_turn_id,
                         source_rollout_path=source_rollout_path,
+                        session_mode="attach_readonly",
+                        thread_id=self._current_session_id,
+                        turn_id=current_turn_id,
+                        thread_status_type=None,
+                        thread_active_flags=[],
+                        can_send=True,
+                        can_interrupt=False,
+                        last_error=None,
                     )
                 return
             if event_type == "token_count":
@@ -228,6 +306,14 @@ class CodexSessionWatcher:
                     status="idle",
                     session_id=session_id,
                     source_rollout_path=source_rollout_path,
+                    session_mode="attach_readonly",
+                    thread_id=self._current_session_id,
+                    turn_id=session_id,
+                    thread_status_type=None,
+                    thread_active_flags=[],
+                    can_send=True,
+                    can_interrupt=False,
+                    last_error=None,
                 )
             return
 
@@ -238,6 +324,14 @@ class CodexSessionWatcher:
                 created_at=timestamp,
                 session_id=session_id,
                 source_rollout_path=source_rollout_path,
+                session_mode="attach_readonly",
+                thread_id=self._current_session_id,
+                turn_id=self._current_turn_id or session_id,
+                thread_status_type=None,
+                thread_active_flags=[],
+                can_send=True,
+                can_interrupt=False,
+                last_error=None,
             )
 
     def _consume_current_rollout(self) -> None:

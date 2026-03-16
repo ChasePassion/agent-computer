@@ -108,4 +108,12 @@ class SessionService:
                 "live_output_seq": 0 if live_output is None else int(live_output.get("seq", 0)),
                 "live_output_session_id": None if live_output is None else live_output.get("session_id"),
                 "live_output_source_rollout_path": None if live_output is None else live_output.get("source_rollout_path"),
+                "codex_session_mode": None if live_output is None else live_output.get("session_mode"),
+                "codex_thread_id": None if live_output is None else live_output.get("thread_id"),
+                "codex_active_turn_id": None if live_output is None else live_output.get("turn_id"),
+                "codex_thread_status_type": None if live_output is None else live_output.get("thread_status_type"),
+                "codex_thread_active_flags": [] if live_output is None else list(live_output.get("thread_active_flags", [])),
+                "codex_can_send": False if live_output is None else bool(live_output.get("can_send", False)),
+                "codex_can_interrupt": False if live_output is None else bool(live_output.get("can_interrupt", False)),
+                "codex_last_error": None if live_output is None else live_output.get("last_error"),
             }

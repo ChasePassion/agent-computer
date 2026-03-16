@@ -90,3 +90,7 @@ class LiveOutputStatusRequest(BaseModel):
     session_id: str | None = None
     updated_at: str | None = None
     source_rollout_path: str | None = None
+
+
+class LiveSessionMessageRequest(BaseModel):
+    message: str

@@ -141,7 +141,8 @@ $payload = [ordered]@{
     external_skills_install = "npx skills add https://github.com/ChasePassion/agent-computer-skill"
 }
 
-$payload | ConvertTo-Json -Depth 8 | Set-Content -Path $statusPath -Encoding utf8
+$payloadJson = $payload | ConvertTo-Json -Depth 8
+Write-Utf8NoBom -Path $statusPath -Text $payloadJson
 
 if ($Json) {
     $payload | ConvertTo-Json -Depth 8
