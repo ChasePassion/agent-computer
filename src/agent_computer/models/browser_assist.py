@@ -75,10 +75,19 @@ class BrowserAssistClickablePoint(BaseModel):
 class BrowserAssistMatch(BaseModel):
     id: str | None = None
     text: str
+    textRaw: str | None = None
+    normalizedText: str | None = None
     role: LocatorRole | None = None
     tagName: str
+    selectorHint: str | None = None
     rect: BrowserAssistRect
+    visibleRect: BrowserAssistRect | None = None
     clickablePoint: BrowserAssistClickablePoint
+    visibleRatio: float | None = Field(default=None, ge=0, le=1)
+    fullyVisible: bool | None = None
+    occluded: bool | None = None
+    actionabilityScore: float | None = None
+    score: float | None = None
 
 
 class BrowserAssistFlags(BaseModel):

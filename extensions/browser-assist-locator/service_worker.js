@@ -13,6 +13,8 @@ let socket = null;
 let keepaliveTimer = null;
 let reconnectAttempts = 0;
 let resolvedWebSocketUrl = null;
+let connectPromise = null;
+let lastErrorMessage = null;
 
 function parseEnvelope(rawText) {
   return globalThis.BrowserAssistSchemas.parseEnvelope(rawText);
@@ -27,6 +29,16 @@ function sendEnvelope(type, payload, requestId = null) {
     return;
   }
   socket.send(buildEnvelope(type, payload, requestId));
+}
+
+function isSupportedTabUrl(url) {
+  return /^https?:/i.test(String(url || ""));
+}
+
+function recordError(error, context) {
+  const message = String(error && error.message ? error.message : error || "Unknown Browser Assist error");
+  lastErrorMessage = `${context}: ${message}`;
+  console.error("Browser Assist error:", lastErrorMessage);
 }
 
 function stopKeepalive() {
@@ -72,6 +84,23 @@ function scheduleReconnect() {
   reconnectAttempts += 1;
 }
 
+async function findBestActiveTab() {
+  const lastFocusedWindow = await chrome.windows.getLastFocused({ populate: true });
+  const focusedTabs = Array.isArray(lastFocusedWindow?.tabs) ? lastFocusedWindow.tabs : [];
+  const preferred = focusedTabs.find((tab) => tab.active && isSupportedTabUrl(tab.url));
+  if (preferred) {
+    return preferred;
+  }
+
+  const activeTabs = await chrome.tabs.query({ active: true });
+  const fallback = activeTabs.find((tab) => isSupportedTabUrl(tab.url));
+  if (fallback) {
+    return fallback;
+  }
+
+  return focusedTabs.find((tab) => tab.active) || activeTabs[0] || null;
+}
+
 async function ensureContentScript(tabId) {
   try {
     const ping = await chrome.tabs.sendMessage(tabId, { type: "browser-assist:ping" });
@@ -89,12 +118,12 @@ async function ensureContentScript(tabId) {
 }
 
 async function locateInActiveTab(payload) {
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = await findBestActiveTab();
   if (!tab || typeof tab.id !== "number") {
     throw new Error("No active browser tab is available for Browser Assist.");
   }
 
-  if (!/^https?:/i.test(tab.url || "")) {
+  if (!isSupportedTabUrl(tab.url)) {
     throw new Error(`Unsupported Browser Assist tab URL: ${tab.url || "<empty>"}`);
   }
 
@@ -156,10 +185,15 @@ async function resolveWebSocketUrl() {
 }
 
 async function connectWebSocket() {
+  if (connectPromise) {
+    return connectPromise;
+  }
+
+  connectPromise = (async () => {
   const websocketUrl = await resolveWebSocketUrl();
 
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    return;
+      return;
   }
 
   socket = new WebSocket(websocketUrl);
@@ -173,6 +207,7 @@ async function connectWebSocket() {
       browserVersion: navigator.userAgent
     });
     startKeepalive();
+    lastErrorMessage = null;
   };
 
   socket.onmessage = (event) => {
@@ -183,6 +218,7 @@ async function connectWebSocket() {
 
   socket.onerror = () => {
     clearResolvedWebSocketUrl();
+    recordError("websocket error", "socket.onerror");
     if (socket) {
       socket.close();
     }
@@ -194,6 +230,24 @@ async function connectWebSocket() {
     clearResolvedWebSocketUrl();
     scheduleReconnect();
   };
+  })();
+
+  try {
+    await connectPromise;
+  } finally {
+    connectPromise = null;
+  }
+}
+
+function ensureConnected(reason) {
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  connectWebSocket().catch((error) => {
+    recordError(error, reason);
+    scheduleReconnect();
+  });
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -201,27 +255,33 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
 
-  connectWebSocket().catch((error) => {
-    console.error("Browser Assist failed to reconnect websocket:", error);
-    scheduleReconnect();
-  });
+  ensureConnected("alarms.onAlarm");
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  connectWebSocket().catch((error) => {
-    console.error("Browser Assist failed to connect on install:", error);
-    scheduleReconnect();
-  });
+  ensureConnected("runtime.onInstalled");
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  connectWebSocket().catch((error) => {
-    console.error("Browser Assist failed to connect on startup:", error);
-    scheduleReconnect();
-  });
+  ensureConnected("runtime.onStartup");
 });
 
-connectWebSocket().catch((error) => {
-  console.error("Browser Assist failed to establish websocket connection:", error);
-  scheduleReconnect();
+chrome.tabs.onActivated.addListener(() => {
+  ensureConnected("tabs.onActivated");
 });
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete" || !isSupportedTabUrl(tab?.url)) {
+    return;
+  }
+  ensureConnected("tabs.onUpdated");
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    return;
+  }
+  ensureConnected("windows.onFocusChanged");
+});
+
+ensureConnected("bootstrap");
