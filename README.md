@@ -275,9 +275,10 @@ chrome://extensions/
 
 1. 先确保 daemon 与 Observation Layer 已启动
 2. **必须**先通过 observation URL 读取 latest grid image；Model 默认取 latest grid image，而不是直接看 `/live` 网页
-3. 调用点击、滚动、输入等桌面动作
-4. 再通过 observation URL 读取最新的 latest grid image，确认状态并顺便读取下一步坐标
-5. 如此循环
+3. 如果 latest grid image 足够定位但局部细节难以辨认，再使用 `zoom` 基于 `artifacts\observation\preview_latest.jpg` 生成一张带整屏绝对坐标网格的局部放大图；`zoom` 只作为辅助，不替代 latest grid image
+4. 调用点击、滚动、输入等桌面动作
+5. 再通过 observation URL 读取最新的 latest grid image，确认状态并顺便读取下一步坐标
+6. 如此循环
 
 手动截图不是默认观察链路；**只有当 observation URL 无法使用、latest image 无法读取、或你明确需要冻结一张静态图时，才允许额外使用截图作为 backup 兜底观察。**
 如果窗口没有最大化，或在截图与点击之间发生了分屏、缩放、尺寸变化，坐标命中率会明显下降。
@@ -408,7 +409,23 @@ agent-computer capture --window-title "Windows PowerShell" --grid
 - 网格绘制使用四边标尺带，默认细线 `50px`，主线 `100px`
 - 返回坐标始终是屏幕绝对坐标
 
-### 3.5 窗口与鼠标动作命令
+### 3.5 局部放大命令
+
+当 `grid_latest.jpg` 已经足够定位，但局部细节难以辨认时，可用 `zoom` 基于原图生成一张局部放大的坐标网格图：
+
+```powershell
+agent-computer zoom --input .\artifacts\observation\preview_latest.jpg --x 1200 --y 430 --width 220 --height 120
+agent-computer zoom --input .\artifacts\observation\preview_latest.jpg --x 1200 --y 430 --width 220 --height 120 --scale 3 --padding 20 --output .\artifacts\observation\zoom_latest.jpg
+```
+
+说明：
+
+- `zoom` 通常以 `artifacts\observation\preview_latest.jpg` 作为输入底图
+- 输出不是纯 preview 局部图，而是带整屏绝对坐标网格的局部放大图
+- 坐标标签仍然使用整屏绝对坐标，不会从局部区域重新从 `0` 开始编号
+- `zoom` 是辅助观察能力，不替代 `artifacts\observation\grid_latest.jpg` 的主观察地位
+
+### 3.6 窗口与鼠标动作命令
 
 列出窗口：
 
@@ -465,16 +482,17 @@ agent-computer hotkey ctrl shift s
 3. 开始操作之前，先阅读相关的 skill / 操作手册
 4. **必须优先**用 `agent-computer observation urls --json` 或 `.agent\observation.urls.json` 拿到默认 observation 入口
 5. **必须优先**读取 `model_default_image_url`，也就是 latest grid image；不要把手动截图当作默认观察方式
-6. 如需确认 freshness，再读取 `model_default_meta_url`
-7. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
+6. 如果 latest grid image 足够定位但局部细节难以辨认，再使用 `zoom` 基于 `artifacts\observation\preview_latest.jpg` 生成一张带整屏绝对坐标网格的局部放大图；`zoom` 只作为辅助，不替代 latest grid image
+7. 如需确认 freshness，再读取 `model_default_meta_url`
+8. 如需读取当前鼠标坐标，再读取 `model_mouse_url`
    未先通过 observation URL 完成页面核对，不得声称已经确认结果或已经完成页面验证。
-8. 用 `click`、`scroll`、`paste`、`browser-open-url` 等原子动作执行业务步骤
-9. 再次通过 observation URL 读取 latest grid image，并顺便读取下一步坐标
-10. 如果点击之后没有出现预期结果，先读取当前鼠标坐标，并和 latest grid image 对照，优先确认是否存在坐标偏差
-11. 不要因为一次点击失败或页面异常就停止，继续思考并尝试其他可行路径，直到用户需求完成
-12. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
-13. 只有当 observation URL 无法使用、或 latest grid image 无法满足判断时，才临时使用 `capture-preview` 作为 backup
-14. 只有当 observation URL 无法使用且你需要冻结一张静态高精度网格图时，才使用 `capture-grid` 作为 backup
+9. 用 `click`、`scroll`、`paste`、`browser-open-url` 等原子动作执行业务步骤
+10. 再次通过 observation URL 读取 latest grid image，并顺便读取下一步坐标
+11. 如果点击之后没有出现预期结果，先读取当前鼠标坐标，并和 latest grid image 对照，优先确认是否存在坐标偏差
+12. 不要因为一次点击失败或页面异常就停止，继续思考并尝试其他可行路径，直到用户需求完成
+13. 如果出现手册中没有覆盖的新行为 -> 结果映射，把它追加回操作手册，并记录 URL、鼠标坐标和页面反馈
+14. 只有当 observation URL 无法使用、或 latest grid image 无法满足判断时，才临时使用 `capture-preview` 作为 backup
+15. 只有当 observation URL 无法使用且你需要冻结一张静态高精度网格图时，才使用 `capture-grid` 作为 backup
 
 ### 4.2 浏览器网页链路
 
@@ -492,8 +510,9 @@ agent-computer hotkey ctrl shift s
    使用 `browser-assist-status`
 4. 用 `browser-assist-locate` 发送结构化定位请求
 5. 从返回结果中读取 `mapped.screenCandidates[*].screenPoint`
-6. 用 `click` 执行桌面点击
-7. 点击后再读取 latest grid image，仅用于确认结果，而不是用于先定位
+6. 如果 Browser Assist 已经给出候选点，但你还需要确认局部细节，再使用 `zoom` 基于 `artifacts\observation\preview_latest.jpg` 生成一张带整屏绝对坐标网格的局部放大图；`zoom` 只作为辅助，不替代默认定位链路
+7. 用 `click` 执行桌面点击
+8. 点击后再读取 latest grid image，仅用于确认结果，而不是用于先定位
 
 也就是说：
 
@@ -540,6 +559,8 @@ Observation latest 文件位于：
 
 - `artifacts\observation\preview_latest.jpg`
 - `artifacts\observation\grid_latest.jpg`
+
+新规则：观察当前桌面时，查看 `artifacts\observation\grid_latest.jpg`。除非万不得已，否则不要看 `artifacts\observation\preview_latest.jpg`。
 
 token 位于：
 

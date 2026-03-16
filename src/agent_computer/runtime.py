@@ -120,6 +120,11 @@ def grid_latest_path() -> Path:
     return OBSERVATION_DIR / "grid_latest.jpg"
 
 
+def zoom_latest_path() -> Path:
+    ensure_runtime_dirs()
+    return OBSERVATION_DIR / "zoom_latest.jpg"
+
+
 def live_output_latest_path() -> Path:
     ensure_runtime_dirs()
     return LIVE_OUTPUT_DIR / "latest.json"

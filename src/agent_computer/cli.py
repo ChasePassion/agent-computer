@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from agent_computer.actions import mouse_position
+from agent_computer.capture import zoom
 from agent_computer.client import DaemonClient
 from agent_computer.daemon import main as daemon_main
 from agent_computer.models.browser_assist import BrowserAssistLocateRequest
@@ -28,7 +29,13 @@ from agent_computer.models.requests import (
     ScrollRequest,
     TypeRequest,
 )
-from agent_computer.runtime import DEFAULT_BIND_HOST, observation_token_path, read_json, write_observation_urls_manifest
+from agent_computer.runtime import (
+    DEFAULT_BIND_HOST,
+    observation_token_path,
+    read_json,
+    write_observation_urls_manifest,
+    zoom_latest_path,
+)
 
 
 def _print_json(payload: Any) -> None:
@@ -230,6 +237,27 @@ def _handle_daemon(args: argparse.Namespace) -> None:
     raise RuntimeError(f"Unsupported command: {args.daemon_command}")
 
 
+def _handle_local(args: argparse.Namespace) -> None:
+    if args.command == "zoom":
+        result = zoom(
+            args.input,
+            args.output,
+            x=args.x,
+            y=args.y,
+            width=args.width,
+            height=args.height,
+            scale=args.scale,
+            padding=args.padding,
+            grid_size=args.grid_size,
+            major_grid_size=args.major_grid_size,
+            jpeg_quality=args.jpeg_quality,
+        )
+        _print_json(result.to_dict())
+        return
+
+    raise RuntimeError(f"Unsupported local command: {args.command}")
+
+
 def _handle_observation(args: argparse.Namespace) -> None:
     if args.observation_command == "urls":
         client = DaemonClient(host=args.host, port=args.port)
@@ -352,6 +380,31 @@ def build_parser() -> argparse.ArgumentParser:
     grid_parser.add_argument("--output", help="Path to save the grid image.")
     grid_parser.add_argument("--grid-size", **common_capture["grid_size"])
     grid_parser.add_argument("--jpeg-quality", **common_capture["jpeg_quality"])
+
+    zoom_parser = subparsers.add_parser(
+        "zoom",
+        help="Generate a zoomed region image with absolute screen grid coordinates.",
+    )
+    zoom_parser.add_argument("--input", required=True, help="Source image path, typically artifacts\\observation\\preview_latest.jpg.")
+    zoom_parser.add_argument(
+        "--output",
+        default=str(zoom_latest_path()),
+        help="Path to save the zoomed image. Defaults to artifacts\\observation\\zoom_latest.jpg.",
+    )
+    zoom_parser.add_argument("--x", required=True, type=int, help="Requested region top-left X in absolute screen coordinates.")
+    zoom_parser.add_argument("--y", required=True, type=int, help="Requested region top-left Y in absolute screen coordinates.")
+    zoom_parser.add_argument("--width", required=True, type=int, help="Requested region width in source pixels.")
+    zoom_parser.add_argument("--height", required=True, type=int, help="Requested region height in source pixels.")
+    zoom_parser.add_argument("--scale", default=3, type=int, help="Zoom scale multiplier. Defaults to 3.")
+    zoom_parser.add_argument("--padding", default=20, type=int, help="Extra padding around the requested region. Defaults to 20.")
+    zoom_parser.add_argument("--grid-size", default=50, type=int, help="Minor grid spacing in absolute screen pixels. Defaults to 50.")
+    zoom_parser.add_argument(
+        "--major-grid-size",
+        default=None,
+        type=int,
+        help="Optional major grid spacing override in absolute screen pixels.",
+    )
+    zoom_parser.add_argument("--jpeg-quality", **common_capture["jpeg_quality"])
 
     subparsers.add_parser("windows", help="List visible desktop windows.")
 
@@ -495,6 +548,10 @@ def main() -> None:
 
     if args.command == "live-output":
         _handle_live_output(args)
+        return
+
+    if args.command == "zoom":
+        _handle_local(args)
         return
 
     client = DaemonClient()
