@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from agent_computer.capture import GRID_LINE_COLOR, RULER_BAND_SIZE, zoom
+from agent_computer.capture import GRID_LINE_COLOR, RULER_BAND_SIZE, export_live_display_image, zoom
 from agent_computer.cli import build_parser
 from agent_computer.runtime import zoom_latest_path
 
@@ -90,3 +90,21 @@ def test_cli_zoom_parser_defaults() -> None:
     assert args.scale == 3
     assert args.padding == 20
     assert args.grid_size == 50
+
+
+def test_export_live_display_image_downsizes_large_image(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.jpg"
+    output_path = tmp_path / "live.jpg"
+    _create_source_image(source_path, size=(3200, 1800))
+
+    export_live_display_image(
+        source_path,
+        output_path,
+        max_dimension=1200,
+        jpeg_quality=40,
+    )
+
+    with Image.open(output_path) as exported:
+        assert exported.format == "JPEG"
+        assert exported.width == 1200
+        assert exported.height == 675
