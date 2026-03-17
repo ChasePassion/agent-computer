@@ -83,7 +83,8 @@ def browser_open_url(url: str, restore_clipboard: bool = False) -> None:
     pyautogui.hotkey("ctrl", "a")
     time.sleep(0.05)
     paste_text(url, restore_clipboard=restore_clipboard)
-    time.sleep(0.05)
+    # Give the address bar a bit more time to settle before confirming navigation.
+    time.sleep(0.1)
     pyautogui.press("enter")
 
 

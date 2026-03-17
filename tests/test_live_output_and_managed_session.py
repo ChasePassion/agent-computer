@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 from agent_computer.services.codex_app_server_transport import CodexAppServerResponseError
 from agent_computer.services.codex_app_server_transport import CodexAppServerTransport
@@ -438,3 +439,57 @@ def test_transport_resolves_windows_npm_codex(monkeypatch, tmp_path: Path) -> No
     transport = CodexAppServerTransport(codex_bin="codex")
 
     assert transport._resolve_codex_bin() == str(codex_cmd)
+
+
+def test_transport_uses_utf8_stdio_on_windows_and_other_platforms(monkeypatch, tmp_path: Path) -> None:
+    popen_kwargs: dict[str, object] = {}
+
+    class _FakePipe:
+        def write(self, _value: str) -> int:
+            return 0
+
+        def flush(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        def __iter__(self):
+            return iter(())
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self.stdin = _FakePipe()
+            self.stdout = _FakePipe()
+            self.stderr = _FakePipe()
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            return None
+
+    def fake_popen(*args, **kwargs):
+        popen_kwargs.update(kwargs)
+        return _FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(CodexAppServerTransport, "_resolve_codex_bin", lambda self: "codex")
+    monkeypatch.setattr(CodexAppServerTransport, "request", lambda self, method, params=None, timeout_sec=None: {})
+    monkeypatch.setattr(CodexAppServerTransport, "notify", lambda self, method, params=None: None)
+
+    transport = CodexAppServerTransport(cwd=tmp_path)
+    try:
+        transport.start()
+    finally:
+        transport.close()
+
+    assert popen_kwargs["text"] is True
+    assert popen_kwargs["encoding"] == "utf-8"
+    assert popen_kwargs["errors"] == "replace"

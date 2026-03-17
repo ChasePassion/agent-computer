@@ -87,6 +87,8 @@ class CodexAppServerTransport:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=self.cwd,
                 env=env,
                 bufsize=1,
