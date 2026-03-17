@@ -55,7 +55,7 @@ def live_image(
 ) -> FileResponse:
     normalized_mode = _normalize_mode(mode, default="grid")
     try:
-        image_path = registry.observation.latest_image_path(normalized_mode)
+        image_path = registry.observation.latest_live_image_path(normalized_mode)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(

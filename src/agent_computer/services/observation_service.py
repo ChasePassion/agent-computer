@@ -9,17 +9,21 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agent_computer.actions import mouse_position
-from agent_computer.capture import capture_observation_pair
+from agent_computer.capture import capture_observation_pair, export_live_display_image
 from agent_computer.runtime import (
     DEFAULT_OBSERVATION_GRID_SIZE,
     DEFAULT_OBSERVATION_INTERVAL_SEC,
     DEFAULT_OBSERVATION_JPEG_QUALITY,
     DEFAULT_OBSERVATION_RETENTION_DAYS,
     DEFAULT_OBSERVATION_RETENTION_MAX_FILES,
+    DEFAULT_LIVE_IMAGE_JPEG_QUALITY,
+    DEFAULT_LIVE_IMAGE_MAX_DIMENSION,
     OBSERVATION_DIR,
     ARTIFACTS_DIR,
     ensure_runtime_dirs,
     grid_latest_path,
+    live_grid_latest_path,
+    live_preview_latest_path,
     metadata_sidecar_path,
     observation_token_path,
     preview_latest_path,
@@ -45,6 +49,8 @@ class ObservationService:
         interval_sec: float = DEFAULT_OBSERVATION_INTERVAL_SEC,
         grid_size: int = DEFAULT_OBSERVATION_GRID_SIZE,
         jpeg_quality: int = DEFAULT_OBSERVATION_JPEG_QUALITY,
+        live_image_max_dimension: int = DEFAULT_LIVE_IMAGE_MAX_DIMENSION,
+        live_image_jpeg_quality: int = DEFAULT_LIVE_IMAGE_JPEG_QUALITY,
         retention_days: int = DEFAULT_OBSERVATION_RETENTION_DAYS,
         retention_max_files: int = DEFAULT_OBSERVATION_RETENTION_MAX_FILES,
     ) -> None:
@@ -54,6 +60,8 @@ class ObservationService:
         self.interval_sec = interval_sec
         self.grid_size = grid_size
         self.jpeg_quality = jpeg_quality
+        self.live_image_max_dimension = live_image_max_dimension
+        self.live_image_jpeg_quality = live_image_jpeg_quality
         self.retention_days = retention_days
         self.retention_max_files = retention_max_files
         self._lock = threading.RLock()
@@ -132,12 +140,23 @@ class ObservationService:
             raise RuntimeError(f"No latest observation frame available for mode: {mode}")
         return Path(str(payload["image_path"]))
 
+    def latest_live_image_path(self, mode: ObservationMode) -> Path:
+        payload = self.latest(mode)
+        if not payload:
+            raise RuntimeError(f"No latest observation frame available for mode: {mode}")
+        live_image_path = payload.get("live_image_path") or payload.get("image_path")
+        return Path(str(live_image_path))
+
     def refresh_now(self) -> None:
         ensure_runtime_dirs()
         preview_target = preview_latest_path()
         grid_target = grid_latest_path()
+        live_preview_target = live_preview_latest_path()
+        live_grid_target = live_grid_latest_path()
         preview_temp = preview_target.with_name(preview_target.name + ".tmp")
         grid_temp = grid_target.with_name(grid_target.name + ".tmp")
+        live_preview_temp = live_preview_target.with_name(live_preview_target.name + ".tmp")
+        live_grid_temp = live_grid_target.with_name(live_grid_target.name + ".tmp")
 
         preview_result, grid_result = capture_observation_pair(
             preview_output_path=preview_temp,
@@ -148,6 +167,20 @@ class ObservationService:
 
         preview_temp.replace(preview_target)
         grid_temp.replace(grid_target)
+        export_live_display_image(
+            preview_target,
+            live_preview_temp,
+            max_dimension=self.live_image_max_dimension,
+            jpeg_quality=self.live_image_jpeg_quality,
+        )
+        export_live_display_image(
+            grid_target,
+            live_grid_temp,
+            max_dimension=self.live_image_max_dimension,
+            jpeg_quality=self.live_image_jpeg_quality,
+        )
+        live_preview_temp.replace(live_preview_target)
+        live_grid_temp.replace(live_grid_target)
 
         self._frame_seq += 1
         updated_at = self._now_iso()
@@ -156,6 +189,7 @@ class ObservationService:
             "preview",
             preview_result.to_dict(),
             preview_target,
+            live_preview_target,
             updated_at,
             cursor_x=cursor_x,
             cursor_y=cursor_y,
@@ -164,6 +198,7 @@ class ObservationService:
             "grid",
             grid_result.to_dict(),
             grid_target,
+            live_grid_target,
             updated_at,
             cursor_x=cursor_x,
             cursor_y=cursor_y,
@@ -200,6 +235,7 @@ class ObservationService:
         mode: ObservationMode,
         payload: dict[str, Any],
         image_path: Path,
+        live_image_path: Path,
         updated_at: str,
         *,
         cursor_x: int,
@@ -209,6 +245,7 @@ class ObservationService:
         desktop_width = max(0, int(bounds[2]) - int(bounds[0]))
         desktop_height = max(0, int(bounds[3]) - int(bounds[1]))
         payload["image_path"] = str(image_path)
+        payload["live_image_path"] = str(live_image_path)
         payload["mode"] = mode
         payload["updated_at"] = updated_at
         payload["frame_seq"] = self._frame_seq

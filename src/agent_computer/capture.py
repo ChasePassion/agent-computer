@@ -611,3 +611,26 @@ def capture_observation_pair(
         content_bounds_in_image=tuple(annotation_meta["content_bounds_in_image"]),
     )
     return preview_result, grid_result
+
+
+def export_live_display_image(
+    input_path: str | Path,
+    output_path: str | Path,
+    *,
+    max_dimension: int = 1600,
+    jpeg_quality: int = 45,
+) -> None:
+    if max_dimension <= 0:
+        raise ValueError("max_dimension must be greater than 0")
+
+    source_path = Path(input_path)
+    output = Path(output_path)
+    _ensure_parent(output)
+
+    with Image.open(source_path) as source_image:
+        image = source_image.convert("RGB")
+
+    if max(image.size) > max_dimension:
+        image.thumbnail((max_dimension, max_dimension), resample=Image.Resampling.LANCZOS)
+
+    _save_image(image, output, image_format="jpeg", jpeg_quality=jpeg_quality)

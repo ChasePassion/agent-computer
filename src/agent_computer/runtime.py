@@ -21,6 +21,8 @@ DEFAULT_OBSERVATION_GRID_SIZE = int(os.getenv("AGENT_COMPUTER_OBSERVATION_GRID_S
 DEFAULT_OBSERVATION_JPEG_QUALITY = int(os.getenv("AGENT_COMPUTER_OBSERVATION_JPEG_QUALITY", "75"))
 DEFAULT_OBSERVATION_RETENTION_DAYS = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_DAYS", "7"))
 DEFAULT_OBSERVATION_RETENTION_MAX_FILES = int(os.getenv("AGENT_COMPUTER_OBSERVATION_RETENTION_MAX_FILES", "200"))
+DEFAULT_LIVE_IMAGE_MAX_DIMENSION = int(os.getenv("AGENT_COMPUTER_LIVE_IMAGE_MAX_DIMENSION", "1600"))
+DEFAULT_LIVE_IMAGE_JPEG_QUALITY = int(os.getenv("AGENT_COMPUTER_LIVE_IMAGE_JPEG_QUALITY", "45"))
 DEFAULT_OBSERVATION_PUBLIC_BASE_URL = os.getenv("AGENT_COMPUTER_OBSERVATION_PUBLIC_BASE_URL", "").strip()
 DEFAULT_PUBLIC_PREFERRED = os.getenv("AGENT_COMPUTER_PUBLIC_PREFERRED", "funnel").strip().lower() or "funnel"
 DEFAULT_FUNNEL_HTTPS_PORT = int(os.getenv("AGENT_COMPUTER_FUNNEL_HTTPS_PORT", "443"))
@@ -118,6 +120,16 @@ def preview_latest_path() -> Path:
 def grid_latest_path() -> Path:
     ensure_runtime_dirs()
     return OBSERVATION_DIR / "grid_latest.jpg"
+
+
+def live_preview_latest_path() -> Path:
+    ensure_runtime_dirs()
+    return OBSERVATION_DIR / "live_preview_latest.jpg"
+
+
+def live_grid_latest_path() -> Path:
+    ensure_runtime_dirs()
+    return OBSERVATION_DIR / "live_grid_latest.jpg"
 
 
 def zoom_latest_path() -> Path:
