@@ -20,8 +20,6 @@ from agent_computer.models.requests import (
     ClickRequest,
     FocusRequest,
     HotkeyRequest,
-    LiveOutputEventRequest,
-    LiveOutputStatusRequest,
     MaximizeRequest,
     MoveRequest,
     PasteRequest,
@@ -290,42 +288,6 @@ def _handle_observation(args: argparse.Namespace) -> None:
     raise RuntimeError(f"Unsupported command: {args.observation_command}")
 
 
-def _handle_live_output(args: argparse.Namespace) -> None:
-    client = DaemonClient(host=args.host, port=args.port)
-
-    if args.live_output_command == "append":
-        payload = LiveOutputEventRequest(
-            kind=args.kind,
-            text=args.text,
-            session_id=args.session_id,
-            status=args.status,
-            created_at=args.created_at,
-            source_rollout_path=args.source_rollout_path,
-        ).model_dump(exclude_none=True)
-        _print_json(_call(client, method="POST", path="/internal/live-output/events", payload=payload))
-        return
-
-    if args.live_output_command == "status":
-        payload = LiveOutputStatusRequest(
-            value=args.value,
-            session_id=args.session_id,
-            updated_at=args.updated_at,
-            source_rollout_path=args.source_rollout_path,
-        ).model_dump(exclude_none=True)
-        _print_json(_call(client, method="POST", path="/internal/live-output/status", payload=payload))
-        return
-
-    if args.live_output_command == "reset":
-        _print_json(_call(client, method="POST", path="/internal/live-output/reset"))
-        return
-
-    if args.live_output_command == "show":
-        _print_json(_call(client, method="GET", path="/internal/live-output"))
-        return
-
-    raise RuntimeError(f"Unsupported command: {args.live_output_command}")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent-computer",
@@ -488,35 +450,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     observation_mouse_parser.add_argument("--json", action="store_true", help="Print the mouse position as JSON.")
 
-    live_output_parser = subparsers.add_parser("live-output", help="Live output helpers.")
-    live_output_subparsers = live_output_parser.add_subparsers(dest="live_output_command", required=True)
-
-    live_output_append_parser = live_output_subparsers.add_parser("append", help="Append a live output event.")
-    live_output_append_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
-    live_output_append_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
-    live_output_append_parser.add_argument("--kind", default="commentary", choices=["commentary", "final", "tool"])
-    live_output_append_parser.add_argument("--text", required=True, help="Text to append.")
-    live_output_append_parser.add_argument("--status", choices=["running", "idle", "no_output"], default=None)
-    live_output_append_parser.add_argument("--session-id", default=None, help="Optional session identifier.")
-    live_output_append_parser.add_argument("--created-at", default=None, help="Optional ISO timestamp.")
-    live_output_append_parser.add_argument("--source-rollout-path", default=None, help="Optional source rollout path.")
-
-    live_output_status_parser = live_output_subparsers.add_parser("status", help="Set live output status.")
-    live_output_status_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
-    live_output_status_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
-    live_output_status_parser.add_argument("--value", required=True, choices=["running", "idle", "no_output"])
-    live_output_status_parser.add_argument("--session-id", default=None, help="Optional session identifier.")
-    live_output_status_parser.add_argument("--updated-at", default=None, help="Optional ISO timestamp.")
-    live_output_status_parser.add_argument("--source-rollout-path", default=None, help="Optional source rollout path.")
-
-    live_output_reset_parser = live_output_subparsers.add_parser("reset", help="Reset live output state.")
-    live_output_reset_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
-    live_output_reset_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
-
-    live_output_show_parser = live_output_subparsers.add_parser("show", help="Show current live output state.")
-    live_output_show_parser.add_argument("--host", default=DaemonClient().host, help="Daemon host.")
-    live_output_show_parser.add_argument("--port", default=DaemonClient().port, type=int, help="Daemon port.")
-
     daemon_parser = subparsers.add_parser("daemon", help="Manage the local agent-computer daemon.")
     daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command", required=True)
     for subcommand in ("start", "status", "stop"):
@@ -544,10 +477,6 @@ def main() -> None:
 
     if args.command == "observation":
         _handle_observation(args)
-        return
-
-    if args.command == "live-output":
-        _handle_live_output(args)
         return
 
     if args.command == "zoom":

@@ -21,7 +21,6 @@ class SessionService:
         self._browser_assist_last_page_url: str | None = None
         self._browser_assist_last_page_title: str | None = None
         self._browser_assist_last_error: str | None = None
-        self._live_output: dict[str, Any] | None = None
 
     def set_last_capture(self, payload: dict[str, Any]) -> None:
         with self._lock:
@@ -72,20 +71,10 @@ class SessionService:
         with self._lock:
             self._browser_assist_last_error = value
 
-    def set_live_output(self, payload: dict[str, Any]) -> None:
-        with self._lock:
-            self._live_output = dict(payload)
-
-    def get_live_output(self) -> dict[str, Any] | None:
-        with self._lock:
-            payload = self._live_output
-            return None if payload is None else dict(payload)
-
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             preview = self._observation_frames.get("preview")
             grid = self._observation_frames.get("grid")
-            live_output = self._live_output
             return {
                 "pid": os.getpid(),
                 "started_at": self._started_at,
@@ -102,18 +91,4 @@ class SessionService:
                 "browser_assist_last_page_url": self._browser_assist_last_page_url,
                 "browser_assist_last_page_title": self._browser_assist_last_page_title,
                 "browser_assist_last_error": self._browser_assist_last_error,
-                "live_output_status": None if live_output is None else live_output.get("status"),
-                "live_output_updated_at": None if live_output is None else live_output.get("updated_at"),
-                "live_output_heartbeat_at": None if live_output is None else live_output.get("heartbeat_at"),
-                "live_output_seq": 0 if live_output is None else int(live_output.get("seq", 0)),
-                "live_output_session_id": None if live_output is None else live_output.get("session_id"),
-                "live_output_source_rollout_path": None if live_output is None else live_output.get("source_rollout_path"),
-                "codex_session_mode": None if live_output is None else live_output.get("session_mode"),
-                "codex_thread_id": None if live_output is None else live_output.get("thread_id"),
-                "codex_active_turn_id": None if live_output is None else live_output.get("turn_id"),
-                "codex_thread_status_type": None if live_output is None else live_output.get("thread_status_type"),
-                "codex_thread_active_flags": [] if live_output is None else list(live_output.get("thread_active_flags", [])),
-                "codex_can_send": False if live_output is None else bool(live_output.get("can_send", False)),
-                "codex_can_interrupt": False if live_output is None else bool(live_output.get("can_interrupt", False)),
-                "codex_last_error": None if live_output is None else live_output.get("last_error"),
             }

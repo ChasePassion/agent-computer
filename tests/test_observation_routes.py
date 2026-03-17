@@ -42,10 +42,7 @@ class StubObservationService:
 def test_live_frame_uses_live_image_path() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(
-        observation=observation,
-        live_output=SimpleNamespace(snapshot=lambda: {"status": "no_output"}),
-    )
+    app.state.registry = SimpleNamespace(observation=observation)
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -54,3 +51,55 @@ def test_live_frame_uses_live_image_path() -> None:
     assert response.status_code == 200
     assert observation.live_calls == ["preview"]
     assert observation.model_calls == []
+
+
+def test_live_page_exposes_remote_control_surface() -> None:
+    observation = StubObservationService()
+    app = FastAPI()
+    app.state.registry = SimpleNamespace(observation=observation)
+    app.include_router(observation_router)
+
+    with TestClient(app) as client:
+        response = client.get("/live", params={"token": "TOKEN123"})
+
+    assert response.status_code == 200
+    assert "Remote Control" in response.text
+    assert "Paste + Enter" in response.text
+    assert ">Move<" not in response.text
+    assert "Ctrl+C" in response.text
+    assert "Backspace" in response.text
+    assert "Ctrl+V" not in response.text
+    assert "Tab" not in response.text
+    assert "Interrupt" not in response.text
+    assert "Send a message to the current Codex session" not in response.text
+
+
+def test_live_state_only_returns_frame_payload() -> None:
+    observation = StubObservationService()
+    app = FastAPI()
+    app.state.registry = SimpleNamespace(observation=observation)
+    app.include_router(observation_router)
+
+    with TestClient(app) as client:
+        response = client.get("/live/state.json", params={"token": "TOKEN123", "mode": "preview"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert list(payload.keys()) == ["frame"]
+    assert payload["frame"]["mode"] == "preview"
+    assert payload["frame"]["image_url"] == "/live/frame.jpg?token=TOKEN123&mode=preview"
+
+
+def test_model_latest_json_uses_relative_image_url() -> None:
+    observation = StubObservationService()
+    app = FastAPI()
+    app.state.registry = SimpleNamespace(observation=observation)
+    app.include_router(observation_router)
+
+    with TestClient(app) as client:
+        response = client.get("/observation/latest.json", params={"token": "TOKEN123", "mode": "grid"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "grid"
+    assert payload["image_url"] == "/observation/latest.jpg?token=TOKEN123&mode=grid"

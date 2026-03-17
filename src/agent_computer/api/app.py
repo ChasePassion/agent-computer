@@ -9,8 +9,7 @@ from agent_computer.api.routes_actions import router as actions_router
 from agent_computer.api.routes_browser_assist import router as browser_assist_router
 from agent_computer.api.routes_browser_assist_ws import router as browser_assist_ws_router
 from agent_computer.api.routes_capture import router as capture_router
-from agent_computer.api.routes_live_output import router as live_output_router
-from agent_computer.api.routes_live_session import router as live_session_router
+from agent_computer.api.routes_live_control import router as live_control_router
 from agent_computer.api.routes_navigation import router as navigation_router
 from agent_computer.api.routes_observation import router as observation_router
 from agent_computer.api.routes_system import router as system_router
@@ -24,10 +23,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
         ensure_runtime_dirs()
         app.state.registry = create_service_registry(host=host, port=port)
         app.state.registry.observation.start()
-        app.state.registry.codex_session_watcher.start()
         yield
-        app.state.registry.codex_managed_session.close()
-        app.state.registry.codex_session_watcher.stop()
         app.state.registry.observation.stop()
 
     app = FastAPI(title="Agent Computer Daemon", version="0.1.0", lifespan=lifespan)
@@ -39,8 +35,7 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.include_router(navigation_router)
     app.include_router(actions_router)
     app.include_router(observation_router)
-    app.include_router(live_output_router)
-    app.include_router(live_session_router)
+    app.include_router(live_control_router)
     app.include_router(browser_assist_router)
     app.include_router(browser_assist_ws_router)
 

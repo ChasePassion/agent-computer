@@ -82,15 +82,6 @@ def live_json(
     return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
-@router.get("/live/output.json")
-def live_output_json(
-    _: str = Depends(_require_token),
-    registry: ServiceRegistry = Depends(get_registry),
-) -> JSONResponse:
-    payload = registry.live_output.snapshot()
-    return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
-
-
 @router.get("/live/state.json")
 def live_state_json(
     request: Request,
@@ -99,15 +90,7 @@ def live_state_json(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> JSONResponse:
     normalized_mode = _normalize_mode(mode, default="preview")
-    payload = {
-        "frame": _build_live_frame_payload(
-            request=request,
-            token=token,
-            mode=normalized_mode,
-            registry=registry,
-        ),
-        "output": registry.live_output.snapshot(),
-    }
+    payload = {"frame": _build_live_frame_payload(request=request, token=token, mode=normalized_mode, registry=registry)}
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
@@ -141,14 +124,13 @@ def latest_json(
     payload = registry.observation.latest(normalized_mode)
     if payload is None:
         raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {normalized_mode}")
-    image_url = str(
-        request.url_for("observation_latest_image").include_query_params(
-            token=token,
-            mode=normalized_mode,
-        )
-    )
     response_payload = dict(payload)
-    response_payload["image_url"] = image_url
+    response_payload["image_url"] = _relative_url_for(
+        request,
+        route_name="observation_latest_image",
+        token=token,
+        mode=normalized_mode,
+    )
     return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
@@ -176,12 +158,22 @@ def _build_live_frame_payload(
     payload = registry.observation.latest(mode)
     if payload is None:
         raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {mode}")
-    image_url = str(
-        request.url_for("live_observation_image").include_query_params(
-            token=token,
-            mode=mode,
-        )
-    )
     response_payload = dict(payload)
-    response_payload["image_url"] = image_url
+    response_payload["image_url"] = _relative_url_for(
+        request,
+        route_name="live_observation_image",
+        token=token,
+        mode=mode,
+    )
     return response_payload
+
+
+def _relative_url_for(
+    request: Request,
+    *,
+    route_name: str,
+    token: str,
+    mode: str,
+) -> str:
+    route_url = request.url_for(route_name)
+    return f"{route_url.path}?token={token}&mode={mode}"

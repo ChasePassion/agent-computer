@@ -26,8 +26,6 @@ from agent_computer.models.requests import (
     ClickRequest,
     FocusRequest,
     HotkeyRequest,
-    LiveOutputEventRequest,
-    LiveOutputStatusRequest,
     MoveRequest,
     PasteRequest,
     PressRequest,
@@ -36,8 +34,6 @@ from agent_computer.models.requests import (
 )
 from agent_computer.models.responses import (
     DaemonHealthResponse,
-    LiveOutputEntry,
-    LiveOutputSnapshotResponse,
     LiveStateResponse,
 )
 
@@ -68,10 +64,6 @@ __all__ = [
     "DaemonHealthResponse",
     "FocusRequest",
     "HotkeyRequest",
-    "LiveOutputEntry",
-    "LiveOutputEventRequest",
-    "LiveOutputSnapshotResponse",
-    "LiveOutputStatusRequest",
     "LiveStateResponse",
     "MoveRequest",
     "PasteRequest",
