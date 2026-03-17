@@ -75,13 +75,6 @@ body {
 .status { min-height: 18px; }
 .status.error { color: var(--red); }
 .status.ok { color: var(--green); }
-.selected-point {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-}
-.point-box {
-  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03);
-}
-.point-box strong { display: block; color: var(--text); font-size: 16px; }
 button, textarea, input {
   border: 1px solid var(--line); border-radius: 10px; background: #0a1119; color: var(--text); font: inherit;
 }
@@ -99,7 +92,6 @@ input[type="number"] { width: 120px; padding: 10px 12px; }
   .shell { width: min(100vw - 10px, 100%); padding-top: 6px; }
   .screen-body { min-height: 230px; padding: 10px; }
   .screen-frame { min-height: 210px; }
-  .selected-point { grid-template-columns: 1fr; }
   .inline-form input[type="number"] { width: 100%; }
 }
 """
@@ -140,22 +132,8 @@ _BODY = """
       </div>
       <div class="control-body">
         <div class="panel">
-          <h3>Selected Point</h3>
-          <div class="selected-point">
-            <div class="point-box">
-              <div class="label">Screen X</div>
-              <strong id="selected-x">-</strong>
-            </div>
-            <div class="point-box">
-              <div class="label">Screen Y</div>
-              <strong id="selected-y">-</strong>
-            </div>
-          </div>
-          <div class="help">Tap the image above to select a desktop coordinate. Actions target the current selected point.</div>
-        </div>
-
-        <div class="panel">
           <h3>Pointer</h3>
+          <div class="help">Tap the image above to select a desktop coordinate. Actions target the current selected point.</div>
           <div class="button-row">
             <button id="click-btn" type="button" class="primary">Click</button>
             <button id="double-click-btn" type="button">Double Click</button>
@@ -212,8 +190,6 @@ const cursorLabel = document.getElementById("cursor-label");
 const previewBtn = document.getElementById("preview-btn");
 const gridBtn = document.getElementById("grid-btn");
 const screenMeta = document.getElementById("screen-meta");
-const selectedX = document.getElementById("selected-x");
-const selectedY = document.getElementById("selected-y");
 const controlStatus = document.getElementById("control-status");
 const scrollAmount = document.getElementById("scroll-amount");
 const messageInput = document.getElementById("message-input");
@@ -257,8 +233,6 @@ function updateControlAvailability() {
 
 function setSelectedPoint(point, clientPoint = null) {
   selectedPoint = point;
-  selectedX.textContent = point ? String(point.x) : "-";
-  selectedY.textContent = point ? String(point.y) : "-";
   if (point && clientPoint) {
     crosshair.style.left = `${clientPoint.x}px`;
     crosshair.style.top = `${clientPoint.y}px`;

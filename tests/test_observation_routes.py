@@ -64,6 +64,7 @@ def test_live_page_exposes_remote_control_surface() -> None:
 
     assert response.status_code == 200
     assert "Remote Control" in response.text
+    assert "Selected Point" not in response.text
     assert "Paste + Enter" in response.text
     assert ">Move<" not in response.text
     assert "Ctrl+C" in response.text
