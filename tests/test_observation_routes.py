@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -39,10 +38,28 @@ class StubObservationService:
         }
 
 
+class StubLiveOutputService:
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "session_id": "sess-1",
+            "session_mode": "attach_readonly",
+            "status": "running",
+            "updated_at": "2026-03-17T12:01:00+08:00",
+            "recent": [
+                {
+                    "seq": 7,
+                    "kind": "commentary",
+                    "text": "hello from codex",
+                    "created_at": "2026-03-17T12:01:00+08:00",
+                }
+            ],
+        }
+
+
 def test_live_frame_uses_live_image_path() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation)
+    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -56,7 +73,7 @@ def test_live_frame_uses_live_image_path() -> None:
 def test_live_page_exposes_remote_control_surface() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation)
+    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -64,6 +81,8 @@ def test_live_page_exposes_remote_control_surface() -> None:
 
     assert response.status_code == 200
     assert "Remote Control" in response.text
+    assert "Codex Live" in response.text
+    assert "Transcript" in response.text
     assert "Selected Point" not in response.text
     assert "Paste + Enter" in response.text
     assert ">Move<" not in response.text
@@ -75,10 +94,10 @@ def test_live_page_exposes_remote_control_surface() -> None:
     assert "Send a message to the current Codex session" not in response.text
 
 
-def test_live_state_only_returns_frame_payload() -> None:
+def test_live_state_returns_frame_and_output_payload() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation)
+    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -86,15 +105,18 @@ def test_live_state_only_returns_frame_payload() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert list(payload.keys()) == ["frame"]
+    assert list(payload.keys()) == ["frame", "output"]
     assert payload["frame"]["mode"] == "preview"
     assert payload["frame"]["image_url"] == "/live/frame.jpg?token=TOKEN123&mode=preview"
+    assert payload["output"]["session_id"] == "sess-1"
+    assert payload["output"]["status"] == "running"
+    assert payload["output"]["recent"][0]["text"] == "hello from codex"
 
 
 def test_model_latest_json_uses_relative_image_url() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation)
+    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
     app.include_router(observation_router)
 
     with TestClient(app) as client:

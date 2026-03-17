@@ -20,6 +20,35 @@ if ($Port -le 0) {
 }
 
 Set-Location $projectRoot
+$daemonBaseUrl = "http://{0}:{1}" -f $AccessHost, $Port
+
+function Test-DaemonHealthy {
+    try {
+        Invoke-RestMethod -Uri ("{0}/system/health" -f $daemonBaseUrl) -Method Get | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+if (Test-DaemonHealthy) {
+    Write-Host "Stopping existing agent-computer daemon on $BindHost`:$Port ..."
+    & .\windows-launcher.ps1 daemon stop --host $AccessHost --port $Port
+
+    $stopDeadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $stopDeadline) {
+        Start-Sleep -Milliseconds 250
+        if (-not (Test-DaemonHealthy)) {
+            break
+        }
+    }
+
+    if (Test-DaemonHealthy) {
+        throw "Timed out waiting for the existing agent-computer daemon to stop."
+    }
+
+    Write-Host ""
+}
 
 Write-Host "Starting agent-computer daemon for observation on $BindHost`:$Port ..."
 & .\windows-launcher.ps1 daemon start --bind-host $BindHost --host $AccessHost --port $Port

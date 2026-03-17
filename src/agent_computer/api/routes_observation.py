@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -8,9 +8,35 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from agent_computer.actions import mouse_position
 from agent_computer.api.deps import get_registry
 from agent_computer.api.live_page import render_live_page
+from agent_computer.runtime import live_output_latest_path, read_json
 from agent_computer.services.registry import ServiceRegistry
 
 router = APIRouter(tags=["observation"])
+
+_LIVE_OUTPUT_DEFAULT: dict[str, Any] = {
+    "session_id": "active",
+    "thread_id": None,
+    "turn_id": None,
+    "session_mode": "none",
+    "thread_status_type": None,
+    "thread_active_flags": [],
+    "can_send": False,
+    "can_interrupt": False,
+    "last_error": None,
+    "seq": 0,
+    "status": "no_output",
+    "updated_at": None,
+    "heartbeat_at": None,
+    "latest_text": None,
+    "active_text": None,
+    "plan": None,
+    "reasoning": None,
+    "recent": [],
+    "recent_activity": [],
+    "truncated": False,
+    "stale_after_seconds": 15,
+    "source_rollout_path": None,
+}
 
 
 def _normalize_mode(value: str | None, *, default: Literal["preview", "grid"]) -> Literal["preview", "grid"]:
@@ -90,7 +116,10 @@ def live_state_json(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> JSONResponse:
     normalized_mode = _normalize_mode(mode, default="preview")
-    payload = {"frame": _build_live_frame_payload(request=request, token=token, mode=normalized_mode, registry=registry)}
+    payload = {
+        "frame": _build_live_frame_payload(request=request, token=token, mode=normalized_mode, registry=registry),
+        "output": _build_live_output_payload(registry),
+    }
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
@@ -177,3 +206,41 @@ def _relative_url_for(
 ) -> str:
     route_url = request.url_for(route_name)
     return f"{route_url.path}?token={token}&mode={mode}"
+
+
+def _build_live_output_payload(registry: ServiceRegistry) -> dict[str, Any]:
+    live_output = getattr(registry, "live_output", None)
+    if live_output is not None and hasattr(live_output, "snapshot"):
+        try:
+            payload = live_output.snapshot()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            merged = dict(_LIVE_OUTPUT_DEFAULT)
+            merged.update(payload)
+            if not isinstance(merged.get("thread_active_flags"), list):
+                merged["thread_active_flags"] = []
+            if not isinstance(merged.get("recent"), list):
+                merged["recent"] = []
+            if not isinstance(merged.get("recent_activity"), list):
+                merged["recent_activity"] = []
+            return merged
+
+    path = live_output_latest_path()
+    if not path.exists():
+        return dict(_LIVE_OUTPUT_DEFAULT)
+    try:
+        payload = read_json(path)
+    except Exception:
+        return dict(_LIVE_OUTPUT_DEFAULT)
+    if not isinstance(payload, dict):
+        return dict(_LIVE_OUTPUT_DEFAULT)
+    merged = dict(_LIVE_OUTPUT_DEFAULT)
+    merged.update(payload)
+    if not isinstance(merged.get("thread_active_flags"), list):
+        merged["thread_active_flags"] = []
+    if not isinstance(merged.get("recent"), list):
+        merged["recent"] = []
+    if not isinstance(merged.get("recent_activity"), list):
+        merged["recent_activity"] = []
+    return merged

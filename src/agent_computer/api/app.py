@@ -23,7 +23,9 @@ def create_app(*, host: str, port: int) -> FastAPI:
         ensure_runtime_dirs()
         app.state.registry = create_service_registry(host=host, port=port)
         app.state.registry.observation.start()
+        app.state.registry.codex_session_watcher.start()
         yield
+        app.state.registry.codex_session_watcher.stop()
         app.state.registry.observation.stop()
 
     app = FastAPI(title="Agent Computer Daemon", version="0.1.0", lifespan=lifespan)
