@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from pathlib import Path
 import threading
@@ -7,6 +8,7 @@ from typing import Any
 
 from agent_computer.runtime import DEFAULT_CODEX_HOME, DEFAULT_CODEX_SESSION_POLL_INTERVAL_SEC, PROJECT_ROOT
 from agent_computer.services.live_output_service import LiveOutputService
+from agent_computer.windowing import list_windows
 
 
 class CodexSessionWatcher:
@@ -31,7 +33,10 @@ class CodexSessionWatcher:
         self._current_offset = 0
         self._current_session_id: str | None = None
         self._current_turn_id: str | None = None
+        self._selected_session_id: str | None = None
         self._session_meta_cache: dict[str, tuple[float, int, str | None, str | None]] = {}
+        self._session_index_cache: tuple[float, int, dict[str, dict[str, str | None]]] | None = None
+        self._candidate_sessions: list[dict[str, Any]] = []
         self._recent_signatures: list[str] = []
 
     def start(self) -> None:
@@ -58,7 +63,10 @@ class CodexSessionWatcher:
             self._thread = None
 
     def poll_once(self) -> None:
-        candidate = self.discover_latest_rollout_file()
+        candidates = self.discover_candidate_sessions()
+        with self._lock:
+            self._candidate_sessions = candidates
+        candidate = self._choose_candidate_rollout(candidates)
         if candidate is None:
             with self._lock:
                 self._current_rollout_path = None
@@ -87,28 +95,82 @@ class CodexSessionWatcher:
             self.switch_rollout_file(candidate)
         self._consume_current_rollout()
 
-    def discover_latest_rollout_file(self) -> Path | None:
+    def discover_candidate_sessions(self) -> list[dict[str, Any]]:
         sessions_dir = self.codex_home / "sessions"
         if not sessions_dir.exists():
-            return None
+            return []
 
-        files = []
+        file_entries = []
         for candidate in sessions_dir.glob("*/*/*/rollout-*.jsonl"):
             try:
-                files.append((candidate.stat().st_mtime, candidate))
+                stat = candidate.stat()
             except OSError:
                 continue
-        files.sort(key=lambda item: item[0], reverse=True)
-        for _, candidate in files[: self.max_candidates]:
             session_id, candidate_cwd = self._read_session_meta(candidate)
             if candidate_cwd is None or self._normalize_path(candidate_cwd) != self.target_cwd:
                 continue
-            if self._current_rollout_path is not None and candidate == self._current_rollout_path:
-                if session_id:
-                    self._current_session_id = session_id
-                return candidate
-            return candidate
-        return None
+            effective_session_id = session_id or candidate.stem
+            file_entries.append((stat.st_mtime, candidate, effective_session_id))
+
+        file_entries.sort(key=lambda item: item[0], reverse=True)
+        session_index = self._read_session_index()
+        codex_windows = self._discover_codex_window_titles()
+        seen_session_ids: set[str] = set()
+        sessions: list[dict[str, Any]] = []
+        for updated_ts, rollout_path, session_id in file_entries[: self.max_candidates]:
+            if session_id in seen_session_ids:
+                continue
+            seen_session_ids.add(session_id)
+            index_meta = session_index.get(session_id, {})
+            thread_name = self._normalize_optional_text(index_meta.get("thread_name"))
+            window_matches = [
+                title for title in codex_windows
+                if thread_name and thread_name.casefold() in title.casefold()
+            ]
+            sessions.append(
+                {
+                    "session_id": session_id,
+                    "thread_name": thread_name,
+                    "updated_at": self._normalize_optional_text(index_meta.get("updated_at")) or self._iso_from_timestamp(updated_ts),
+                    "rollout_path": str(rollout_path),
+                    "window_matches": window_matches,
+                }
+            )
+        return sessions
+
+    def select_session(self, session_id: str | None) -> dict[str, Any]:
+        normalized = self._normalize_optional_text(session_id)
+        candidates = self.discover_candidate_sessions()
+        session_ids = {str(item.get("session_id")) for item in candidates}
+        if normalized is not None and normalized not in session_ids:
+            raise KeyError(normalized)
+        with self._lock:
+            self._selected_session_id = normalized
+            self._candidate_sessions = candidates
+        self.poll_once()
+        return self.sessions_snapshot()
+
+    def sessions_snapshot(self) -> dict[str, Any]:
+        candidates = self.discover_candidate_sessions()
+        with self._lock:
+            self._candidate_sessions = candidates
+            selected_session_id = self._selected_session_id
+            current_session_id = self._current_session_id
+            current_turn_id = self._current_turn_id
+        items = []
+        for item in candidates:
+            session_id = str(item.get("session_id"))
+            enriched = dict(item)
+            enriched["selected"] = selected_session_id == session_id
+            enriched["current"] = current_session_id == session_id
+            items.append(enriched)
+        return {
+            "selection_mode": "manual" if selected_session_id else "auto",
+            "selected_session_id": selected_session_id,
+            "current_session_id": current_session_id,
+            "current_turn_id": current_turn_id,
+            "items": items,
+        }
 
     def switch_rollout_file(self, rollout_path: Path) -> None:
         session_id, _ = self._read_session_meta(rollout_path)
@@ -131,6 +193,19 @@ class CodexSessionWatcher:
             can_interrupt=False,
             last_error=None,
         )
+
+    def _choose_candidate_rollout(self, candidates: list[dict[str, Any]]) -> Path | None:
+        if not candidates:
+            return None
+        with self._lock:
+            selected_session_id = self._selected_session_id
+        if selected_session_id:
+            for item in candidates:
+                if item.get("session_id") == selected_session_id:
+                    rollout_path = self._normalize_optional_text(item.get("rollout_path"))
+                    return None if rollout_path is None else Path(rollout_path)
+        rollout_path = self._normalize_optional_text(candidates[0].get("rollout_path"))
+        return None if rollout_path is None else Path(rollout_path)
 
     def update_heartbeat(self, *, timestamp: str | None = None) -> None:
         session_id = self._current_turn_id or self._current_session_id
@@ -387,6 +462,54 @@ class CodexSessionWatcher:
         self._session_meta_cache[cache_key] = (stat.st_mtime, stat.st_size, session_id, cwd)
         return session_id, cwd
 
+    def _read_session_index(self) -> dict[str, dict[str, str | None]]:
+        index_path = self.codex_home / "session_index.jsonl"
+        if not index_path.exists():
+            return {}
+        try:
+            stat = index_path.stat()
+        except OSError:
+            return {}
+        with self._lock:
+            cached = self._session_index_cache
+            if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+                return dict(cached[2])
+
+        session_index: dict[str, dict[str, str | None]] = {}
+        try:
+            with index_path.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(payload, dict):
+                        continue
+                    session_id = self._normalize_optional_text(payload.get("id"))
+                    if not session_id:
+                        continue
+                    session_index[session_id] = {
+                        "thread_name": self._normalize_optional_text(payload.get("thread_name")),
+                        "updated_at": self._normalize_optional_text(payload.get("updated_at")),
+                    }
+        except OSError:
+            return {}
+
+        with self._lock:
+            self._session_index_cache = (stat.st_mtime, stat.st_size, dict(session_index))
+        return session_index
+
+    def _discover_codex_window_titles(self) -> list[str]:
+        titles: list[str] = []
+        for window in list_windows():
+            title = self._normalize_optional_text(window.title)
+            if title is None:
+                continue
+            lowered = title.casefold()
+            if "codex.js" in lowered or "\\npm\\\\node_modules\\@openai\\codex" in lowered or " codex " in lowered:
+                titles.append(title)
+        return titles
+
     def _remember_signature(self, kind: str, text: str) -> bool:
         signature = f"{kind}:{text.strip()}"
         if not signature:
@@ -408,3 +531,7 @@ class CodexSessionWatcher:
     @staticmethod
     def _normalize_path(value: str | Path) -> Path:
         return Path(value).expanduser().resolve()
+
+    @staticmethod
+    def _iso_from_timestamp(value: float) -> str:
+        return datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")

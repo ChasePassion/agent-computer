@@ -92,7 +92,7 @@ body {
 .entry-title { color: var(--text); font-weight: 700; }
 .entry-status { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .entry-text { color: var(--text); white-space: normal; word-break: break-word; line-height: 1.62; }
-button, textarea, input {
+button, textarea, input, select {
   border: 1px solid var(--line); border-radius: 10px; background: #0a1119; color: var(--text); font: inherit;
 }
 button {
@@ -103,7 +103,7 @@ button.primary { border-color: rgba(126,231,135,.25); background: rgba(126,231,1
 button.warn { border-color: rgba(242,204,96,.25); background: rgba(242,204,96,.12); color: var(--yellow); }
 button[disabled], textarea:disabled, input:disabled { opacity: .55; cursor: not-allowed; }
 textarea { width: 100%; min-height: 92px; padding: 12px; resize: vertical; }
-input[type="number"] { width: 120px; padding: 10px 12px; }
+input[type="number"], select { width: 240px; padding: 10px 12px; }
 .inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .rich-text code.inline-code {
   display: inline-block; padding: 1px 6px; margin: 0 1px; border: 1px solid rgba(121,192,255,.16);
@@ -119,7 +119,7 @@ input[type="number"] { width: 120px; padding: 10px 12px; }
   .screen-frame { min-height: 210px; }
   .terminal-body { min-height: 280px; max-height: 52vh; }
   .entry { grid-template-columns: 1fr; gap: 6px; }
-  .inline-form input[type="number"] { width: 100%; }
+  .inline-form input[type="number"], .inline-form select { width: 100%; }
 }
 """
 
@@ -201,6 +201,17 @@ _BODY = """
         <div class="card-meta" id="output-updated-label">Updated -</div>
       </div>
       <div class="codex-body">
+        <div class="panel">
+          <h3>Sessions</h3>
+          <div class="inline-form">
+            <select id="session-select">
+              <option value="">Follow latest</option>
+            </select>
+            <button id="session-auto-btn" type="button">Follow Latest</button>
+          </div>
+          <div id="session-switch-status" class="help">Following latest matching session.</div>
+        </div>
+
         <div class="pill-row">
           <div id="output-status-pill" class="pill">No Output</div>
           <div id="session-mode-pill" class="pill">No Session</div>
@@ -248,8 +259,12 @@ const outputUpdatedLabel = document.getElementById("output-updated-label");
 const outputStatusPill = document.getElementById("output-status-pill");
 const sessionModePill = document.getElementById("session-mode-pill");
 const sessionLine = document.getElementById("session-line");
+const sessionSelect = document.getElementById("session-select");
+const sessionAutoBtn = document.getElementById("session-auto-btn");
+const sessionSwitchStatus = document.getElementById("session-switch-status");
 const terminalNote = document.getElementById("terminal-note");
 const terminalBody = document.getElementById("terminal-body");
+let sessionSwitchBusy = false;
 const pointButtons = [
   document.getElementById("click-btn"),
   document.getElementById("double-click-btn"),
@@ -269,6 +284,7 @@ const actionButtons = [
 
 function liveStateUrl() { return `/live/state.json?token=${encodeURIComponent(token)}&mode=${encodeURIComponent(mode)}`; }
 function controlUrl(path) { return `/live/control/${path}?token=${encodeURIComponent(token)}`; }
+function liveSessionSelectUrl() { return `/live/session/select?token=${encodeURIComponent(token)}`; }
 function parseTime(value) { const ms = Date.parse(value || ""); return Number.isNaN(ms) ? null : ms; }
 function shortId(value) { const s = String(value || "").trim(); return !s ? "-" : (s.length <= 14 ? s : `${s.slice(0, 8)}…${s.slice(-4)}`); }
 function normalizeKind(kind) {
@@ -521,6 +537,54 @@ function applyOutput(output) {
   renderTerminal(output);
 }
 
+function sessionDisplayName(session) {
+  if (session?.thread_name) return String(session.thread_name);
+  return shortId(session?.session_id);
+}
+
+function sessionOptionLabel(session) {
+  const parts = [sessionDisplayName(session)];
+  if (session?.updated_at) parts.push(String(session.updated_at));
+  if (Array.isArray(session?.window_matches) && session.window_matches.length) parts.push("window");
+  return parts.join(" · ");
+}
+
+function applySessions(sessions) {
+  const items = Array.isArray(sessions?.items) ? sessions.items : [];
+  const selectedSessionId = sessions?.selection_mode === "manual" ? String(sessions?.selected_session_id || "") : "";
+  const previousValue = sessionSelect.value;
+  sessionSelect.innerHTML = "";
+  const autoOption = document.createElement("option");
+  autoOption.value = "";
+  autoOption.textContent = "Follow latest";
+  sessionSelect.appendChild(autoOption);
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = String(item.session_id || "");
+    option.textContent = sessionOptionLabel(item);
+    sessionSelect.appendChild(option);
+  }
+  sessionSelect.value = Array.from(sessionSelect.options).some((option) => option.value === selectedSessionId)
+    ? selectedSessionId
+    : (previousValue && Array.from(sessionSelect.options).some((option) => option.value === previousValue) ? previousValue : "");
+
+  const selectedItem = items.find((item) => String(item.session_id || "") === selectedSessionId) || null;
+  if (selectedItem) {
+    const matches = Array.isArray(selectedItem.window_matches) && selectedItem.window_matches.length
+      ? ` Matched window: ${selectedItem.window_matches[0]}`
+      : "";
+    sessionSwitchStatus.textContent = `Locked to ${sessionDisplayName(selectedItem)}.${matches}`;
+  } else {
+    const currentItem = items.find((item) => item.current) || items[0] || null;
+    sessionSwitchStatus.textContent = currentItem
+      ? `Following latest matching session: ${sessionDisplayName(currentItem)}.`
+      : "No matching Codex sessions found for this workspace.";
+  }
+
+  sessionSelect.disabled = sessionSwitchBusy || items.length === 0;
+  sessionAutoBtn.disabled = sessionSwitchBusy || (sessions?.selection_mode !== "manual");
+}
+
 function resetOutput() {
   outputStatusPill.textContent = "No Output";
   outputStatusPill.className = "pill";
@@ -530,6 +594,13 @@ function resetOutput() {
   terminalNote.textContent = "Waiting for Codex transcript";
   outputUpdatedLabel.textContent = "Updated -";
   terminalBody.innerHTML = '<div class="terminal-empty">No Codex output yet.</div>';
+}
+
+function resetSessions() {
+  sessionSelect.innerHTML = '<option value="">Follow latest</option>';
+  sessionSelect.disabled = true;
+  sessionAutoBtn.disabled = true;
+  sessionSwitchStatus.textContent = "No matching Codex sessions found for this workspace.";
 }
 
 async function parseErrorResponse(response) {
@@ -574,6 +645,27 @@ async function runPress(label, key) {
   return runControl(label, "press", { key });
 }
 
+async function selectSession(sessionId) {
+  if (sessionSwitchBusy) return;
+  sessionSwitchBusy = true;
+  sessionSelect.disabled = true;
+  sessionAutoBtn.disabled = true;
+  try {
+    const response = await fetch(liveSessionSelectUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId || null }),
+    });
+    if (!response.ok) throw new Error(await parseErrorResponse(response));
+    sessionSwitchStatus.textContent = sessionId ? "Switching session..." : "Following latest matching session.";
+    triggerImmediatePoll();
+  } catch (error) {
+    sessionSwitchStatus.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    sessionSwitchBusy = false;
+  }
+}
+
 function triggerImmediatePoll() {
   if (pollTimer !== null) {
     clearTimeout(pollTimer);
@@ -589,6 +681,7 @@ async function poll() {
     const payload = await response.json();
     applyFrame(payload.frame);
     applyOutput(payload.output);
+    applySessions(payload.sessions);
     if (!selectedPoint) setStatus("Tap the screen image to pick a point.");
   } catch (_error) {
     updatedLabel.textContent = "waiting";
@@ -597,6 +690,7 @@ async function poll() {
     screenMeta.textContent = "Waiting for daemon";
     setStatus("Waiting for daemon", "error");
     resetOutput();
+    resetSessions();
   } finally {
     pollTimer = window.setTimeout(poll, 1000);
   }
@@ -672,6 +766,14 @@ document.getElementById("esc-btn").addEventListener("click", async () => {
   await runPress("Esc", "esc");
 });
 
+sessionSelect.addEventListener("change", async () => {
+  await selectSession(sessionSelect.value || null);
+});
+
+sessionAutoBtn.addEventListener("click", async () => {
+  await selectSession(null);
+});
+
 previewBtn.addEventListener("click", () => {
   if (mode !== "preview") {
     mode = "preview";
@@ -691,6 +793,7 @@ gridBtn.addEventListener("click", () => {
 updateModeButtons();
 updateControlAvailability();
 resetOutput();
+resetSessions();
 poll();
 """
 

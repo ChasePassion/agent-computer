@@ -56,10 +56,54 @@ class StubLiveOutputService:
         }
 
 
+class StubCodexSessionWatcher:
+    def __init__(self) -> None:
+        self.selected_session_id: str | None = None
+
+    def sessions_snapshot(self) -> dict[str, object]:
+        items = [
+            {
+                "session_id": "sess-1",
+                "thread_name": "alpha",
+                "updated_at": "2026-03-17T12:01:00+08:00",
+                "rollout_path": "C:/rollouts/sess-1.jsonl",
+                "window_matches": [],
+                "selected": self.selected_session_id == "sess-1",
+                "current": (self.selected_session_id or "sess-1") == "sess-1",
+            },
+            {
+                "session_id": "sess-2",
+                "thread_name": "beta",
+                "updated_at": "2026-03-17T12:02:00+08:00",
+                "rollout_path": "C:/rollouts/sess-2.jsonl",
+                "window_matches": ["Codex beta"],
+                "selected": self.selected_session_id == "sess-2",
+                "current": self.selected_session_id == "sess-2",
+            },
+        ]
+        return {
+            "selection_mode": "manual" if self.selected_session_id else "auto",
+            "selected_session_id": self.selected_session_id,
+            "current_session_id": self.selected_session_id or "sess-1",
+            "current_turn_id": "turn-1",
+            "items": items,
+        }
+
+    def select_session(self, session_id: str | None) -> dict[str, object]:
+        if session_id not in {None, "sess-1", "sess-2"}:
+            raise KeyError(session_id)
+        self.selected_session_id = session_id
+        return self.sessions_snapshot()
+
+
 def test_live_frame_uses_live_image_path() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
+    app.state.registry = SimpleNamespace(
+        observation=observation,
+        live_output=StubLiveOutputService(),
+        codex_session_watcher=StubCodexSessionWatcher(),
+    )
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -73,7 +117,11 @@ def test_live_frame_uses_live_image_path() -> None:
 def test_live_page_exposes_remote_control_surface() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
+    app.state.registry = SimpleNamespace(
+        observation=observation,
+        live_output=StubLiveOutputService(),
+        codex_session_watcher=StubCodexSessionWatcher(),
+    )
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -83,6 +131,7 @@ def test_live_page_exposes_remote_control_surface() -> None:
     assert "Remote Control" in response.text
     assert "Codex Live" in response.text
     assert "Transcript" in response.text
+    assert "Follow Latest" in response.text
     assert "Selected Point" not in response.text
     assert "Paste + Enter" in response.text
     assert ">Move<" not in response.text
@@ -97,7 +146,11 @@ def test_live_page_exposes_remote_control_surface() -> None:
 def test_live_state_returns_frame_and_output_payload() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
+    app.state.registry = SimpleNamespace(
+        observation=observation,
+        live_output=StubLiveOutputService(),
+        codex_session_watcher=StubCodexSessionWatcher(),
+    )
     app.include_router(observation_router)
 
     with TestClient(app) as client:
@@ -105,18 +158,45 @@ def test_live_state_returns_frame_and_output_payload() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert list(payload.keys()) == ["frame", "output"]
+    assert list(payload.keys()) == ["frame", "output", "sessions"]
     assert payload["frame"]["mode"] == "preview"
     assert payload["frame"]["image_url"] == "/live/frame.jpg?token=TOKEN123&mode=preview"
     assert payload["output"]["session_id"] == "sess-1"
     assert payload["output"]["status"] == "running"
     assert payload["output"]["recent"][0]["text"] == "hello from codex"
+    assert payload["sessions"]["selection_mode"] == "auto"
+    assert len(payload["sessions"]["items"]) == 2
+
+
+def test_live_session_select_switches_viewed_session() -> None:
+    observation = StubObservationService()
+    watcher = StubCodexSessionWatcher()
+    app = FastAPI()
+    app.state.registry = SimpleNamespace(
+        observation=observation,
+        live_output=StubLiveOutputService(),
+        codex_session_watcher=watcher,
+    )
+    app.include_router(observation_router)
+
+    with TestClient(app) as client:
+        response = client.post("/live/session/select", params={"token": "TOKEN123"}, json={"session_id": "sess-2"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert watcher.selected_session_id == "sess-2"
+    assert payload["selection_mode"] == "manual"
+    assert payload["selected_session_id"] == "sess-2"
 
 
 def test_model_latest_json_uses_relative_image_url() -> None:
     observation = StubObservationService()
     app = FastAPI()
-    app.state.registry = SimpleNamespace(observation=observation, live_output=StubLiveOutputService())
+    app.state.registry = SimpleNamespace(
+        observation=observation,
+        live_output=StubLiveOutputService(),
+        codex_session_watcher=StubCodexSessionWatcher(),
+    )
     app.include_router(observation_router)
 
     with TestClient(app) as client:

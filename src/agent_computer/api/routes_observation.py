@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from agent_computer.actions import mouse_position
 from agent_computer.api.deps import get_registry
 from agent_computer.api.live_page import render_live_page
+from agent_computer.models.requests import LiveSessionSelectRequest
 from agent_computer.runtime import live_output_latest_path, read_json
 from agent_computer.services.registry import ServiceRegistry
 
@@ -36,6 +37,14 @@ _LIVE_OUTPUT_DEFAULT: dict[str, Any] = {
     "truncated": False,
     "stale_after_seconds": 15,
     "source_rollout_path": None,
+}
+
+_LIVE_SESSIONS_DEFAULT: dict[str, Any] = {
+    "selection_mode": "auto",
+    "selected_session_id": None,
+    "current_session_id": None,
+    "current_turn_id": None,
+    "items": [],
 }
 
 
@@ -119,7 +128,24 @@ def live_state_json(
     payload = {
         "frame": _build_live_frame_payload(request=request, token=token, mode=normalized_mode, registry=registry),
         "output": _build_live_output_payload(registry),
+        "sessions": _build_live_sessions_payload(registry),
     }
+    return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@router.post("/live/session/select")
+def live_session_select(
+    request: LiveSessionSelectRequest,
+    _: str = Depends(_require_token),
+    registry: ServiceRegistry = Depends(get_registry),
+) -> JSONResponse:
+    watcher = getattr(registry, "codex_session_watcher", None)
+    if watcher is None or not hasattr(watcher, "select_session"):
+        raise HTTPException(status_code=503, detail="Live session switching is unavailable.")
+    try:
+        payload = watcher.select_session(request.session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown live session: {request.session_id}") from exc
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
@@ -243,4 +269,21 @@ def _build_live_output_payload(registry: ServiceRegistry) -> dict[str, Any]:
         merged["recent"] = []
     if not isinstance(merged.get("recent_activity"), list):
         merged["recent_activity"] = []
+    return merged
+
+
+def _build_live_sessions_payload(registry: ServiceRegistry) -> dict[str, Any]:
+    watcher = getattr(registry, "codex_session_watcher", None)
+    if watcher is None or not hasattr(watcher, "sessions_snapshot"):
+        return dict(_LIVE_SESSIONS_DEFAULT)
+    try:
+        payload = watcher.sessions_snapshot()
+    except Exception:
+        return dict(_LIVE_SESSIONS_DEFAULT)
+    if not isinstance(payload, dict):
+        return dict(_LIVE_SESSIONS_DEFAULT)
+    merged = dict(_LIVE_SESSIONS_DEFAULT)
+    merged.update(payload)
+    if not isinstance(merged.get("items"), list):
+        merged["items"] = []
     return merged

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class LiveStateResponse(BaseModel):
     frame: dict[str, Any]
     output: dict[str, Any]
+    sessions: dict[str, Any]
 
 
 class DaemonHealthResponse(BaseModel):

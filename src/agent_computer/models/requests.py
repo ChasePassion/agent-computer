@@ -74,3 +74,7 @@ class PressRequest(BaseModel):
 
 class HotkeyRequest(BaseModel):
     keys: list[str]
+
+
+class LiveSessionSelectRequest(BaseModel):
+    session_id: str | None = None
