@@ -2,10 +2,32 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from agent_computer.retry import RetryDisposition
 
 LocatorRole = Literal["button", "link", "input", "textarea", "tab", "checkbox", "radio", "any"]
-BrowserAssistMessageType = Literal["hello", "keepalive", "locate", "locate-result", "error"]
+BrowserAssistActionKind = Literal["click", "type", "navigate"]
+BrowserAssistVerifyKind = Literal[
+    "text_changed",
+    "url_changed",
+    "dialog_appeared",
+    "selection_changed",
+    "element_appeared",
+    "element_disappeared",
+]
+BrowserAssistMessageType = Literal[
+    "hello",
+    "keepalive",
+    "session-state",
+    "locate",
+    "locate-result",
+    "observe",
+    "observe-result",
+    "act",
+    "act-result",
+    "error",
+]
 
 
 class BrowserAssistQuery(BaseModel):
@@ -23,6 +45,18 @@ class BrowserAssistOptions(BaseModel):
 class BrowserAssistLocateRequest(BaseModel):
     query: BrowserAssistQuery
     options: BrowserAssistOptions = Field(default_factory=BrowserAssistOptions)
+    tabSessionId: str | None = None
+    documentEpoch: int | None = Field(default=None, ge=0)
+
+
+class BrowserTabSession(BaseModel):
+    tabSessionId: str
+    tabId: int = Field(ge=0)
+    frameId: int | None = Field(default=None, ge=0)
+    windowId: int | None = Field(default=None, ge=0)
+    url: str | None = None
+    title: str | None = None
+    documentEpoch: int = Field(default=0, ge=0)
 
 
 class BrowserAssistPageState(BaseModel):
@@ -33,6 +67,7 @@ class BrowserAssistPageState(BaseModel):
     viewportWidth: int
     viewportHeight: int
     devicePixelRatio: float = Field(gt=0)
+    documentEpoch: int = Field(default=0, ge=0)
 
 
 class BrowserAssistViewportState(BaseModel):
@@ -72,6 +107,33 @@ class BrowserAssistClickablePoint(BaseModel):
     y: int
 
 
+class BrowserAssistLocatorRecipe(BaseModel):
+    role: LocatorRole | None = None
+    text: str | None = None
+    selectorHint: str | None = None
+    ancestorHints: list[str] = Field(default_factory=list)
+    indexHint: int | None = Field(default=None, ge=0)
+
+
+class BrowserAssistNodeRef(BaseModel):
+    nodeId: str
+    tabSessionId: str | None = None
+    frameId: int | None = Field(default=None, ge=0)
+    documentEpoch: int = Field(default=0, ge=0)
+    selectorHint: str | None = None
+    locatorRecipe: BrowserAssistLocatorRecipe = Field(default_factory=BrowserAssistLocatorRecipe)
+
+
+class BrowserAssistActionability(BaseModel):
+    sameSession: bool = True
+    attached: bool = False
+    visible: bool = False
+    notOccluded: bool = False
+    enabled: bool = False
+    editable: bool | None = None
+    stable: bool = False
+
+
 class BrowserAssistMatch(BaseModel):
     id: str | None = None
     text: str
@@ -82,10 +144,13 @@ class BrowserAssistMatch(BaseModel):
     selectorHint: str | None = None
     rect: BrowserAssistRect
     visibleRect: BrowserAssistRect | None = None
+    nodeRef: BrowserAssistNodeRef | None = None
     clickablePoint: BrowserAssistClickablePoint
+    actionability: BrowserAssistActionability | None = None
     visibleRatio: float | None = Field(default=None, ge=0, le=1)
     fullyVisible: bool | None = None
     occluded: bool | None = None
+    selected: bool | None = None
     actionabilityScore: float | None = None
     score: float | None = None
 
@@ -95,7 +160,8 @@ class BrowserAssistFlags(BaseModel):
     isSecurityPage: bool = False
 
 
-class BrowserAssistRawResult(BaseModel):
+class BrowserAssistLocateResponse(BaseModel):
+    context: BrowserTabSession | None = None
     page: BrowserAssistPageState
     viewport: BrowserAssistViewportState
     browser: BrowserAssistBrowserAnchor
@@ -104,28 +170,60 @@ class BrowserAssistRawResult(BaseModel):
     matches: list[BrowserAssistMatch] = Field(default_factory=list)
 
 
-class BrowserAssistScreenPoint(BaseModel):
-    x: int
-    y: int
+class BrowserAssistObserveRequest(BaseModel):
+    nodeRef: BrowserAssistNodeRef
 
 
-class BrowserAssistMappedCandidate(BaseModel):
-    id: str
-    text: str
-    tagName: str
-    screenPoint: BrowserAssistScreenPoint
-    gridPoint: BrowserAssistScreenPoint
-    cssAbsolutePoint: BrowserAssistScreenPoint
-    rect: BrowserAssistRect
+class BrowserAssistObservation(BaseModel):
+    nodeRef: BrowserAssistNodeRef | None = None
+    exists: bool = True
+    text: str | None = None
+    textRaw: str | None = None
+    value: str | None = None
+    selected: bool | None = None
+    actionability: BrowserAssistActionability | None = None
 
 
-class BrowserAssistMappedResult(BaseModel):
-    screenCandidates: list[BrowserAssistMappedCandidate]
+class BrowserAssistObserveResponse(BaseModel):
+    context: BrowserTabSession | None = None
+    observation: BrowserAssistObservation
 
 
-class BrowserAssistLocateResponse(BaseModel):
-    raw: BrowserAssistRawResult
-    mapped: BrowserAssistMappedResult
+class BrowserAssistVerifySpec(BaseModel):
+    kind: BrowserAssistVerifyKind
+    timeoutMs: int = Field(default=2000, ge=0, le=15000)
+    pollIntervalMs: int = Field(default=100, ge=10, le=1000)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrowserAssistActRequest(BaseModel):
+    action: BrowserAssistActionKind
+    tabSessionId: str | None = None
+    nodeRef: BrowserAssistNodeRef | None = None
+    text: str | None = None
+    url: str | None = None
+    verify: BrowserAssistVerifySpec | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "BrowserAssistActRequest":
+        if self.action in {"click", "type"} and self.nodeRef is None:
+            raise ValueError(f"{self.action} requires nodeRef.")
+        if self.action == "type" and self.text is None:
+            raise ValueError("type requires text.")
+        if self.action == "navigate" and self.url is None:
+            raise ValueError("navigate requires url.")
+        return self
+
+
+class BrowserAssistActResponse(BaseModel):
+    context: BrowserTabSession | None = None
+    nodeRef: BrowserAssistNodeRef | None = None
+    action: BrowserAssistActionKind
+    actionability: BrowserAssistActionability | None = None
+    verified: bool
+    retryDisposition: RetryDisposition = RetryDisposition.FAIL_FAST
+    failureReason: str | None = None
+    observation: dict[str, Any] = Field(default_factory=dict)
 
 
 class BrowserAssistStatusResponse(BaseModel):
@@ -139,6 +237,12 @@ class BrowserAssistStatusResponse(BaseModel):
     browserVersion: str | None = None
     lastPageUrl: str | None = None
     lastPageTitle: str | None = None
+    currentTabSessionId: str | None = None
+    preferredTabSessionId: str | None = None
+    currentTabId: int | None = None
+    currentFrameId: int | None = None
+    currentWindowId: int | None = None
+    currentDocumentEpoch: int | None = None
 
 
 class BrowserAssistEnvelope(BaseModel):

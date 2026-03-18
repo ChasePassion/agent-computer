@@ -218,17 +218,18 @@ chrome://extensions/
 .\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
 ```
 
-定位成功后，真正执行点击的仍然是：
+定位成功后，默认闭环不再是桌面坐标点击，而是继续走 Browser Assist 原语：
 
 ```powershell
-.\windows-launcher.ps1 click --x <screen_x> --y <screen_y>
+.\windows-launcher.ps1 browser-assist-observe --input-json "{...nodeRef...}"
+.\windows-launcher.ps1 browser-assist-act --input-json "{...action,nodeRef,verify...}"
 ```
 
 也就是说：
 
-- 扩展负责定位
-- daemon 负责映射
-- `agent-computer` 负责执行
+- 扩展负责 `locate / observe / act`
+- service worker 负责 tab session 绑定与导航恢复
+- daemon 负责协议、会话上下文和错误分类
 
 ### 第 5 步：代码更新后的扩展刷新
 
@@ -270,6 +271,7 @@ chrome://extensions/
 - 点击 / 双击 / 移动 / 滚动
 - 键盘输入 / 粘贴 / 热键
 - 浏览器 URL 直达导航
+- Browser Assist `locate / observe / act`
 
 如果需要定位元素，推荐流程是：
 
@@ -339,22 +341,28 @@ agent-computer browser-refresh
 
 ### 3.2 Browser Assist 插件命令
 
-用于 Browser Assist Locator 扩展的打包、连接状态检查和结构化定位：
+用于 Browser Assist Locator 扩展的打包、连接状态检查和 `locate / observe / act`：
 
 ```powershell
 .\scripts\package_browser_assist_extension.ps1
 .\windows-launcher.ps1 browser-assist-status
 .\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+.\windows-launcher.ps1 browser-assist-observe --input-json "{...}"
+.\windows-launcher.ps1 browser-assist-act --input-json "{...}"
 agent-computer browser-assist-status
 agent-computer browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+agent-computer browser-assist-observe --input-json "{...}"
+agent-computer browser-assist-act --input-json "{...}"
 ```
 
 说明：
 
 - `package_browser_assist_extension.ps1`：把扩展模板复制到产物目录，并把 `service_worker.js` 里的 WebSocket URL 替换成当前 daemon 的连接地址
 - `browser-assist-status`：读取扩展连接状态，确认是否已经 `connected: true`
-- `browser-assist-locate`：向扩展发送结构化 locate 请求，返回 `raw + mapped`
-- 插件负责定位，daemon 负责 screen 映射，真实动作仍由 `click` / `type` / `scroll` 执行
+- `browser-assist-locate`：向扩展发送结构化 locate 请求，返回 `context / page / matches`
+- `browser-assist-observe`：基于 `nodeRef` 读取目标当前状态
+- `browser-assist-act`：基于 `nodeRef` 执行浏览器内动作，并附带轻量 verify
+- Browser Assist 主链现在不再依赖 `mapped.screenCandidates` 或桌面 `click`
 
 ### 3.3 Observation 命令与接口
 
@@ -500,7 +508,7 @@ agent-computer hotkey ctrl shift s
 
 - Chrome / Chromium 网页
 - Browser Assist 扩展已连接
-- 需要先做 DOM 几何定位，再做桌面点击的场景
+- 需要基于稳定 `nodeRef` 做网页内动作的场景
 
 默认推荐顺序：
 
@@ -509,16 +517,16 @@ agent-computer hotkey ctrl shift s
 3. 确认 Browser Assist 已连接：
    使用 `browser-assist-status`
 4. 用 `browser-assist-locate` 发送结构化定位请求
-5. 从返回结果中读取 `mapped.screenCandidates[*].screenPoint`
-6. 如果 Browser Assist 已经给出候选点，但你还需要确认局部细节，再使用 `zoom` 基于 `artifacts\observation\preview_latest.jpg` 生成一张带整屏绝对坐标网格的局部放大图；`zoom` 只作为辅助，不替代默认定位链路
-7. 用 `click` 执行桌面点击
-8. 点击后再读取 latest grid image，仅用于确认结果，而不是用于先定位
+5. 从返回结果中读取 `context` 和 `matches[*].nodeRef`
+6. 如果要在动作前确认目标仍然稳定，先用 `browser-assist-observe`
+7. 用 `browser-assist-act` 执行 `click / type / navigate`
+8. 如果需要额外确认页面结果，再读取 latest grid image 作为事后观察，而不是前置定位来源
 
 也就是说：
 
-- 浏览器页面的默认定位来源是 Browser Assist
-- `grid` 在这个链路里默认只负责看结果
-- 只有 Browser Assist 失败或当前页面不适合插件定位时，才回退到纯 grid 读坐标
+- 浏览器页面的默认定位与执行来源都是 Browser Assist
+- `grid` 在这个链路里默认只负责事后观察
+- 只有 Browser Assist 失败或当前页面不适合插件定位时，才回退到纯桌面坐标链路
 
 ## 5. 便捷启动
 
@@ -529,6 +537,8 @@ agent-computer hotkey ctrl shift s
 .\windows-launcher.ps1 browser-current-url
 .\windows-launcher.ps1 browser-assist-status
 .\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
+.\windows-launcher.ps1 browser-assist-observe --input-json "{...}"
+.\windows-launcher.ps1 browser-assist-act --input-json "{...}"
 .\windows-launcher.ps1 browser-back
 .\windows-launcher.ps1 browser-forward
 .\windows-launcher.ps1 browser-refresh
@@ -622,17 +632,19 @@ agent-computer observation mouse --json
 
 ## 7. Browser Assist Locator
 
-项目提供一套 Browser Assist Locator v1 最小闭环：
+项目现在提供一套 Browser Assist session-first 浏览器执行链：
 
-- 扩展负责网页 DOM 几何定位
-- daemon 负责 WebSocket 桥接与坐标映射
-- `agent-computer` 继续负责实际桌面动作执行
+- 扩展负责 `locate / observe / act`
+- service worker 负责 tab session 绑定、导航恢复与 click 的 trusted browser input
+- daemon 负责 WebSocket 桥接、上下文校验与 retry 分类
 
 Browser Assist 的后端入口：
 
 ```text
 GET  /browser-assist/status
 POST /browser-assist/locate
+POST /browser-assist/observe
+POST /browser-assist/act
 GET  /ws/browser-assist?token=<TOKEN>
 ```
 
@@ -662,6 +674,19 @@ Browser Assist 配置文件位于：
 .\windows-launcher.ps1 browser-assist-locate --input-file .\docs\examples\browser-assist-request.json
 ```
 
+读取稳定目标状态：
+
+```powershell
+.\windows-launcher.ps1 browser-assist-observe --input-json "{""nodeRef"": {...}}"
+```
+
+执行浏览器内动作：
+
+```powershell
+.\windows-launcher.ps1 browser-assist-act --input-json "{""action"": ""click"", ""nodeRef"": {...}, ""verify"": {...}}"
+.\windows-launcher.ps1 browser-assist-act --input-json "{""action"": ""navigate"", ""url"": ""https://www.zhipin.com/""}"
+```
+
 请求体示例：
 
 ```json
@@ -681,26 +706,28 @@ Browser Assist 配置文件位于：
 
 Browser Assist 的输出边界：
 
-- 插件返回 `page / viewport / browser / matches`
-- 插件返回 `browser.contentLeftOnScreen` / `contentTopOnScreen`
-- 插件不做 screen 坐标最终映射
-- daemon 负责把 `clickablePoint` 映射成桌面绝对坐标
+- `locate` 返回 `context / page / viewport / browser / matches`
+- `matches[*]` 返回稳定 `nodeRef`、显式 `actionability` gate 和 `clickablePoint`
+- `observe` 返回目标当前存在性、文本、选中态与 actionability
+- `act` 返回 `verified / retryDisposition / failureReason / observation`
+- Browser Assist 主链现在不再依赖 `mapped.screenCandidates` 或桌面坐标点击
 
 推荐浏览器操作链路：
 
 1. `browser-open-url`
 2. `browser-assist-status`
 3. `browser-assist-locate`
-4. 读取 `mapped.screenCandidates[*].screenPoint`
-5. `click`
-6. `observation/latest.*?mode=grid` 仅用于确认点击结果
+4. 读取 `context` 和 `matches[*].nodeRef`
+5. 如有必要，先 `browser-assist-observe`
+6. 使用 `browser-assist-act`
+7. `observation/latest.*?mode=grid` 仅用于额外事后观察
 
 也就是说：
 
-- Browser Assist 负责“找在哪”
-- daemon 负责“算到哪”
-- `agent-computer click` 负责“点下去”
-- `grid` 默认不再负责浏览器页面的前置定位，只负责事后验证
+- Browser Assist 负责浏览器页面的“找目标 / 看状态 / 执行动作”
+- daemon 不再做 screen point 映射
+- 纯桌面 `click` 现在只作为 fallback，不是 Browser Assist 默认闭环
+- `grid` 默认只做事后观察，不做 Browser Assist 主链里的前置定位
 
 快速 roundtrip 检查：
 

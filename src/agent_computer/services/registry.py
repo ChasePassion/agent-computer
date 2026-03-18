@@ -31,6 +31,7 @@ class ServiceRegistry:
 
 def create_service_registry(*, host: str, port: int) -> ServiceRegistry:
     session = SessionService()
+    execution_lock = threading.RLock()
     capture = CaptureService(session)
     actions = ActionService()
     navigation = NavigationService(session)
@@ -49,4 +50,5 @@ def create_service_registry(*, host: str, port: int) -> ServiceRegistry:
         codex_session_watcher=codex_session_watcher,
         browser_assist_connections=browser_assist_connections,
         browser_assist=browser_assist,
+        execution_lock=execution_lock,
     )

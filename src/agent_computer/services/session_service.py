@@ -21,6 +21,9 @@ class SessionService:
         self._browser_assist_last_page_url: str | None = None
         self._browser_assist_last_page_title: str | None = None
         self._browser_assist_last_error: str | None = None
+        self._browser_assist_current_tab_session_id: str | None = None
+        self._browser_assist_preferred_tab_session_id: str | None = None
+        self._browser_assist_current_document_epoch: int | None = None
 
     def set_last_capture(self, payload: dict[str, Any]) -> None:
         with self._lock:
@@ -71,6 +74,18 @@ class SessionService:
         with self._lock:
             self._browser_assist_last_error = value
 
+    def set_browser_assist_current_tab_session_id(self, value: str | None) -> None:
+        with self._lock:
+            self._browser_assist_current_tab_session_id = value
+
+    def set_browser_assist_preferred_tab_session_id(self, value: str | None) -> None:
+        with self._lock:
+            self._browser_assist_preferred_tab_session_id = value
+
+    def set_browser_assist_current_document_epoch(self, value: int | None) -> None:
+        with self._lock:
+            self._browser_assist_current_document_epoch = value
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             preview = self._observation_frames.get("preview")
@@ -91,4 +106,7 @@ class SessionService:
                 "browser_assist_last_page_url": self._browser_assist_last_page_url,
                 "browser_assist_last_page_title": self._browser_assist_last_page_title,
                 "browser_assist_last_error": self._browser_assist_last_error,
+                "browser_assist_current_tab_session_id": self._browser_assist_current_tab_session_id,
+                "browser_assist_preferred_tab_session_id": self._browser_assist_preferred_tab_session_id,
+                "browser_assist_current_document_epoch": self._browser_assist_current_document_epoch,
             }

@@ -26,6 +26,8 @@
   function normalizeLocateRequest(raw) {
     const query = { ...DEFAULT_QUERY, ...(raw?.query || {}) };
     const options = { ...DEFAULT_OPTIONS, ...(raw?.options || {}) };
+    const tabSessionId = typeof raw?.tabSessionId === "string" ? raw.tabSessionId.trim() : "";
+    const documentEpoch = Number.parseInt(raw?.documentEpoch, 10);
 
     query.role = typeof query.role === "string" ? query.role : "any";
 
@@ -33,7 +35,12 @@
     options.interactiveOnly = Boolean(options.interactiveOnly);
     options.maxCandidates = clampInteger(options.maxCandidates, 5, 1, 20);
 
-    return { query, options };
+    return {
+      query,
+      options,
+      tabSessionId: tabSessionId || null,
+      documentEpoch: Number.isFinite(documentEpoch) ? Math.max(0, documentEpoch) : null
+    };
   }
 
   function parseEnvelope(rawText) {

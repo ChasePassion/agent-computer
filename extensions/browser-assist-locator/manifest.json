@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Browser Assist Locator",
-  "version": "0.1.5",
-  "description": "Read-only browser locator bridge for agent-computer.",
+  "version": "0.2.0",
+  "description": "Session-bound browser locate/observe/act bridge for agent-computer.",
   "minimum_chrome_version": "116",
   "permissions": [
     "alarms",
+    "debugger",
     "scripting",
     "storage",
     "tabs"

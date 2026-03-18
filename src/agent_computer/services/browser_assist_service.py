@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from typing import Any
-
-from agent_computer.actions import browser_current_url as read_browser_current_url
 from agent_computer.models.browser_assist import (
+    BrowserAssistActRequest,
+    BrowserAssistActResponse,
     BrowserAssistLocateRequest,
     BrowserAssistLocateResponse,
-    BrowserAssistMappedCandidate,
-    BrowserAssistMappedResult,
-    BrowserAssistRawResult,
-    BrowserAssistScreenPoint,
+    BrowserAssistObserveRequest,
+    BrowserAssistObserveResponse,
     BrowserAssistStatusResponse,
 )
+from agent_computer.retry import RetryDisposition, RetryDispositionError
 from agent_computer.services.browser_assist_connection_manager import BrowserAssistConnectionManager
 from agent_computer.services.session_service import SessionService
-from agent_computer.windowing import require_foreground_browser_window
 
 
 class BrowserAssistService:
@@ -33,68 +30,76 @@ class BrowserAssistService:
         return BrowserAssistStatusResponse.model_validate(self.connection_manager.snapshot())
 
     async def locate(self, request: BrowserAssistLocateRequest) -> BrowserAssistLocateResponse:
-        foreground_window = require_foreground_browser_window()
-        current_url = read_browser_current_url()
-        raw_payload = await self.connection_manager.request_locate(request.model_dump(mode="json"))
-        raw = BrowserAssistRawResult.model_validate(raw_payload)
-
-        self._validate_page_context(
-            raw_page=raw.page.model_dump(mode="json"),
-            foreground_window=foreground_window,
-            current_url=current_url,
+        response = BrowserAssistLocateResponse.model_validate(
+            await self.connection_manager.request_locate(request.model_dump(mode="json"))
         )
-
-        mapped = BrowserAssistMappedResult(
-            screenCandidates=[
-                self._map_candidate(raw, match, index)
-                for index, match in enumerate(raw.matches)
-            ]
+        self._validate_context(
+            requested_tab_session_id=request.tabSessionId,
+            requested_document_epoch=request.documentEpoch,
+            actual_context=response.context,
         )
-        return BrowserAssistLocateResponse(raw=raw, mapped=mapped)
+        return response
 
-    def _validate_page_context(
+    async def observe(self, request: BrowserAssistObserveRequest) -> BrowserAssistObserveResponse:
+        response = BrowserAssistObserveResponse.model_validate(
+            await self.connection_manager.request_observe(request.model_dump(mode="json"))
+        )
+        self._validate_context(
+            requested_tab_session_id=request.nodeRef.tabSessionId,
+            requested_document_epoch=request.nodeRef.documentEpoch,
+            actual_context=response.context,
+        )
+        if response.observation.nodeRef is not None:
+            self._validate_context(
+                requested_tab_session_id=request.nodeRef.tabSessionId,
+                requested_document_epoch=request.nodeRef.documentEpoch,
+                actual_context=response.context,
+                actual_node_document_epoch=response.observation.nodeRef.documentEpoch,
+            )
+        return response
+
+    async def act(self, request: BrowserAssistActRequest) -> BrowserAssistActResponse:
+        response = BrowserAssistActResponse.model_validate(
+            await self.connection_manager.request_act(request.model_dump(mode="json"))
+        )
+        requested_tab_session_id = request.tabSessionId or (None if request.nodeRef is None else request.nodeRef.tabSessionId)
+        requested_document_epoch = None if request.nodeRef is None or response.nodeRef is None else request.nodeRef.documentEpoch
+        self._validate_context(
+            requested_tab_session_id=requested_tab_session_id,
+            requested_document_epoch=requested_document_epoch,
+            actual_context=response.context,
+            actual_node_document_epoch=None if response.nodeRef is None else response.nodeRef.documentEpoch,
+        )
+        return response
+
+    def _validate_context(
         self,
         *,
-        raw_page: dict[str, Any],
-        foreground_window: dict[str, Any],
-        current_url: str,
+        requested_tab_session_id: str | None,
+        requested_document_epoch: int | None,
+        actual_context,
+        actual_node_document_epoch: int | None = None,
     ) -> None:
-        page_url = str(raw_page.get("url") or "").strip()
-        page_title = str(raw_page.get("title") or "").strip()
-        window_title = str(foreground_window.get("title") or "").strip()
-
-        if page_url and current_url != page_url:
-            raise RuntimeError(
-                "Browser Assist page URL does not match the current foreground browser URL: "
-                f"plugin={page_url!r}, browser={current_url!r}"
+        if requested_tab_session_id and actual_context is not None and actual_context.tabSessionId != requested_tab_session_id:
+            raise RetryDispositionError(
+                "Browser Assist returned a different tab session than the active request context.",
+                retry_disposition=RetryDisposition.CONTEXT_LOST,
+                details={
+                    "requestedTabSessionId": requested_tab_session_id,
+                    "actualTabSessionId": actual_context.tabSessionId,
+                },
             )
 
-        if page_title and page_title not in window_title:
-            raise RuntimeError(
-                "Browser Assist page title does not match the current foreground browser window: "
-                f"plugin={page_title!r}, window={window_title!r}"
+        if requested_document_epoch is None or actual_context is None:
+            return
+
+        actual_document_epoch = actual_node_document_epoch if actual_node_document_epoch is not None else actual_context.documentEpoch
+        if actual_document_epoch != requested_document_epoch:
+            raise RetryDispositionError(
+                "Browser Assist documentEpoch no longer matches the active request context.",
+                retry_disposition=RetryDisposition.REACQUIRE_TARGET,
+                details={
+                    "requestedDocumentEpoch": requested_document_epoch,
+                    "actualDocumentEpoch": actual_document_epoch,
+                },
             )
-
-    def _map_candidate(
-        self,
-        raw: BrowserAssistRawResult,
-        match,
-        index: int,
-    ) -> BrowserAssistMappedCandidate:
-        css_abs_x = raw.browser.contentLeftOnScreen + raw.viewport.offsetLeft + match.clickablePoint.x
-        css_abs_y = raw.browser.contentTopOnScreen + raw.viewport.offsetTop + match.clickablePoint.y
-
-        screen_x = round(css_abs_x * raw.page.devicePixelRatio)
-        screen_y = round(css_abs_y * raw.page.devicePixelRatio)
-
-        point = BrowserAssistScreenPoint(x=screen_x, y=screen_y)
-        css_point = BrowserAssistScreenPoint(x=css_abs_x, y=css_abs_y)
-        return BrowserAssistMappedCandidate(
-            id=match.id or f"candidate-{index}",
-            text=match.text,
-            tagName=match.tagName,
-            screenPoint=point,
-            gridPoint=point,
-            cssAbsolutePoint=css_point,
-            rect=match.rect,
-        )

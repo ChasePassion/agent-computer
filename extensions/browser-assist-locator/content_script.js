@@ -13,13 +13,31 @@
       }
 
       if (message.type === "browser-assist:ping") {
-        sendResponse({ ok: true, pageUrl: window.location.href, pageTitle: document.title });
+        sendResponse({
+          ok: true,
+          pageUrl: window.location.href,
+          pageTitle: document.title,
+          documentEpoch: globalThis.BrowserAssistLocator.getDocumentEpoch(),
+          pageState: globalThis.BrowserAssistLocator.getPageState()
+        });
         return;
       }
 
       if (message.type === "browser-assist:locate") {
         const request = globalThis.BrowserAssistSchemas.normalizeLocateRequest(message.payload);
-        const result = globalThis.BrowserAssistLocator.locate(request);
+        const result = await globalThis.BrowserAssistLocator.locate(request);
+        sendResponse({ ok: true, result });
+        return;
+      }
+
+      if (message.type === "browser-assist:observe") {
+        const result = await globalThis.BrowserAssistLocator.observe(message.payload || {});
+        sendResponse({ ok: true, result });
+        return;
+      }
+
+      if (message.type === "browser-assist:act") {
+        const result = await globalThis.BrowserAssistLocator.act(message.payload || {});
         sendResponse({ ok: true, result });
         return;
       }

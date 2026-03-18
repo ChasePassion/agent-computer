@@ -31,3 +31,6 @@ class DaemonHealthResponse(BaseModel):
     browser_assist_last_page_url: str | None = None
     browser_assist_last_page_title: str | None = None
     browser_assist_last_error: str | None = None
+    browser_assist_current_tab_session_id: str | None = None
+    browser_assist_preferred_tab_session_id: str | None = None
+    browser_assist_current_document_epoch: int | None = None
