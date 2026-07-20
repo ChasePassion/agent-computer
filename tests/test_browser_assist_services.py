@@ -4,7 +4,13 @@ import asyncio
 
 import pytest
 
-from agent_computer.models.browser_assist import BrowserAssistActRequest, BrowserAssistLocateRequest, BrowserAssistObserveRequest
+from agent_computer.models.browser_assist import (
+    BrowserAssistActRequest,
+    BrowserAssistActResponse,
+    BrowserAssistLocateRequest,
+    BrowserAssistLocateResponse,
+    BrowserAssistObserveRequest,
+)
 from agent_computer.retry import RetryDisposition, RetryDispositionError
 from agent_computer.services.browser_assist_connection_manager import BrowserAssistConnectionManager
 from agent_computer.services.browser_assist_service import BrowserAssistService
@@ -251,6 +257,23 @@ def test_connection_manager_injects_tab_session_into_generic_requests() -> None:
     asyncio.run(scenario())
 
 
+def test_connection_manager_retains_current_document_identity() -> None:
+    async def scenario() -> None:
+        manager = BrowserAssistConnectionManager(SessionService())
+        websocket = StubWebSocket()
+        context = build_context()
+        context.update({"documentId": "document-current", "pageNonce": "nonce-current"})
+
+        await manager.accept(websocket)
+        await manager.handle_message({"type": "hello", "payload": {"activeSession": context}})
+
+        snapshot = manager.snapshot()
+        assert snapshot["currentDocumentId"] == "document-current"
+        assert snapshot["currentPageNonce"] == "nonce-current"
+
+    asyncio.run(scenario())
+
+
 def test_connection_manager_extends_act_timeout_for_verify_window() -> None:
     manager = BrowserAssistConnectionManager(SessionService())
 
@@ -259,6 +282,29 @@ def test_connection_manager_extends_act_timeout_for_verify_window() -> None:
         {"action": "click", "verify": {"kind": "element_appeared", "timeoutMs": 5000}},
         default=5.0,
     ) == 7.0
+
+
+def test_connection_manager_does_not_retry_an_ambiguous_action_timeout() -> None:
+    async def scenario() -> None:
+        manager = BrowserAssistConnectionManager(SessionService())
+        websocket = StubWebSocket()
+        await manager.accept(websocket)
+
+        with pytest.raises(RetryDispositionError) as exc_info:
+            await manager.request(
+                "act",
+                {"action": "click", "nodeRef": {"nodeId": "node-1"}},
+                timeout_sec=0.001,
+            )
+
+        assert exc_info.value.retry_disposition == RetryDisposition.FAIL_FAST
+        assert exc_info.value.details == {
+            "requestType": "act",
+            "outcome": "unknown",
+            "actionMayHaveExecuted": True,
+        }
+
+    asyncio.run(scenario())
 
 
 class StubManager:
@@ -350,7 +396,110 @@ def test_browser_assist_act_round_trips_node_ref_based_action() -> None:
 
     response = asyncio.run(service.act(request))
 
-    assert response.verified is True
+    assert response.verified is False
+    assert response.verificationStatus == "not_requested"
     assert response.nodeRef is not None
     assert response.nodeRef.tabSessionId == "tab-1"
     assert response.retryDisposition == RetryDisposition.FAIL_FAST
+
+
+def test_browser_assist_act_requires_requested_verification_to_report_passed() -> None:
+    payload = build_act_result()
+    payload["verificationStatus"] = "passed"
+    service = BrowserAssistService(SessionService(), StubManager(act_payload=payload))
+    request = BrowserAssistActRequest.model_validate(
+        {
+            "action": "click",
+            "nodeRef": {
+                "nodeId": "node-3-1",
+                "tabSessionId": "tab-1",
+                "frameId": 0,
+                "documentEpoch": 3,
+            },
+            "verify": {"kind": "text_changed"},
+        }
+    )
+
+    response = asyncio.run(service.act(request))
+
+    assert response.verified is True
+    assert response.verificationStatus == "passed"
+
+
+def test_locate_response_accepts_standard_aria_roles_and_document_identity() -> None:
+    payload = build_locate_result()
+    payload["context"]["documentId"] = "document-uuid-1"
+    payload["context"]["pageNonce"] = "nonce-uuid-1"
+    payload["page"]["documentId"] = "document-uuid-1"
+    payload["page"]["pageNonce"] = "nonce-uuid-1"
+    payload["matches"][0]["role"] = "combobox"
+    payload["matches"][0]["nodeRef"]["documentId"] = "document-uuid-1"
+    payload["matches"][0]["nodeRef"]["pageNonce"] = "nonce-uuid-1"
+    payload["matches"][0]["nodeRef"]["locatorRecipe"]["role"] = "combobox"
+
+    response = BrowserAssistLocateResponse.model_validate(payload)
+
+    assert response.context is not None
+    assert response.context.documentId == "document-uuid-1"
+    assert response.context.pageNonce == "nonce-uuid-1"
+    assert response.matches[0].role == "combobox"
+    assert response.matches[0].nodeRef is not None
+    assert response.matches[0].nodeRef.documentId == "document-uuid-1"
+    assert response.matches[0].nodeRef.pageNonce == "nonce-uuid-1"
+
+
+def test_browser_assist_observe_rejects_stale_document_id_even_when_epoch_matches() -> None:
+    payload = build_observe_result(document_epoch=3)
+    payload["context"].update({"documentId": "document-new", "pageNonce": "nonce-new"})
+    payload["observation"]["nodeRef"].update({"documentId": "document-new", "pageNonce": "nonce-new"})
+    service = BrowserAssistService(SessionService(), StubManager(observe_payload=payload))
+    request = BrowserAssistObserveRequest.model_validate(
+        {
+            "nodeRef": {
+                "nodeId": "dom:nonce-old:3:1",
+                "tabSessionId": "tab-1",
+                "frameId": 0,
+                "documentEpoch": 3,
+                "documentId": "document-old",
+                "pageNonce": "nonce-old",
+            }
+        }
+    )
+
+    with pytest.raises(RetryDispositionError) as exc_info:
+        asyncio.run(service.observe(request))
+
+    assert exc_info.value.retry_disposition == RetryDisposition.REACQUIRE_TARGET
+
+
+def test_browser_assist_observe_rejects_a_response_without_document_context() -> None:
+    payload = build_observe_result(document_epoch=3)
+    payload["context"] = None
+    service = BrowserAssistService(SessionService(), StubManager(observe_payload=payload))
+    request = BrowserAssistObserveRequest.model_validate(
+        {
+            "nodeRef": {
+                "nodeId": "dom:nonce-current:3:1",
+                "tabSessionId": "tab-1",
+                "frameId": 0,
+                "documentEpoch": 3,
+                "documentId": "document-current",
+                "pageNonce": "nonce-current",
+            }
+        }
+    )
+
+    with pytest.raises(RetryDispositionError) as exc_info:
+        asyncio.run(service.observe(request))
+
+    assert exc_info.value.retry_disposition == RetryDisposition.CONTEXT_LOST
+
+
+def test_verification_skipped_is_not_reported_as_verified() -> None:
+    payload = build_act_result(verified=True)
+    payload["observation"] = {"verificationSkipped": True}
+
+    response = BrowserAssistActResponse.model_validate(payload)
+
+    assert response.verificationStatus == "not_requested"
+    assert response.verified is False

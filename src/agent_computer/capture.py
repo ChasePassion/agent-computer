@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -11,7 +13,7 @@ import win32gui
 
 from agent_computer.windowing import find_window
 
-CaptureTarget = Literal["active-window", "primary-screen"]
+CaptureTarget = Literal["active-window", "primary-screen", "virtual-screen"]
 ImageFormat = Literal["png", "jpeg"]
 RULER_BAND_SIZE = 72
 RULER_BACKGROUND = (18, 20, 24)
@@ -40,6 +42,8 @@ class CaptureResult:
     major_grid_size: int | None = None
     content_origin: tuple[int, int] | None = None
     content_bounds_in_image: tuple[int, int, int, int] | None = None
+    screen_digest: str | None = None
+    captured_monotonic_ns: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -319,6 +323,11 @@ def _grab_region(region: dict) -> Image.Image:
         return Image.frombytes("RGB", shot.size, shot.rgb)
 
 
+def _screen_digest(image: Image.Image) -> str:
+    sample = image.convert("L").resize((64, 64), resample=Image.Resampling.BILINEAR)
+    return hashlib.blake2b(sample.tobytes(), digest_size=16).hexdigest()
+
+
 def _get_primary_monitor_region() -> dict:
     with mss.mss() as sct:
         monitor = sct.monitors[1]
@@ -330,14 +339,32 @@ def _get_primary_monitor_region() -> dict:
         }
 
 
-def _save_image(image: Image.Image, output: Path, *, image_format: ImageFormat, jpeg_quality: int) -> None:
+def _get_virtual_monitor_region() -> dict:
+    with mss.mss() as sct:
+        monitor = sct.monitors[0]
+        return {
+            "left": monitor["left"],
+            "top": monitor["top"],
+            "width": monitor["width"],
+            "height": monitor["height"],
+        }
+
+
+def _save_image(
+    image: Image.Image,
+    output: Path,
+    *,
+    image_format: ImageFormat,
+    jpeg_quality: int,
+    optimize: bool = True,
+) -> None:
     save_kwargs: dict = {}
     if image_format == "jpeg":
         if image.mode != "RGB":
             image = image.convert("RGB")
         save_kwargs["format"] = "JPEG"
         save_kwargs["quality"] = jpeg_quality
-        save_kwargs["optimize"] = True
+        save_kwargs["optimize"] = optimize
     else:
         save_kwargs["format"] = "PNG"
     image.save(output, **save_kwargs)
@@ -419,7 +446,7 @@ def capture(
             region["top"] + region["height"],
         )
     else:
-        region = _get_primary_monitor_region()
+        region = _get_virtual_monitor_region() if target == "virtual-screen" else _get_primary_monitor_region()
         title = None
         hwnd = None
         bounds = (
@@ -430,6 +457,8 @@ def capture(
         )
 
     image = _grab_region(region)
+    captured_monotonic_ns = time.monotonic_ns()
+    screen_digest = _screen_digest(image)
     annotation_style = "raw"
     ruler_band_size: int | None = None
     content_origin: tuple[int, int] | None = None
@@ -465,6 +494,8 @@ def capture(
         major_grid_size=int(annotation_meta["major_grid_size"]) if draw_grid else None,
         content_origin=content_origin,
         content_bounds_in_image=content_bounds_in_image,
+        screen_digest=screen_digest,
+        captured_monotonic_ns=captured_monotonic_ns,
     )
 
 
@@ -553,13 +584,18 @@ def capture_observation_pair(
     grid_output_path: str | Path,
     grid_size: int = 50,
     jpeg_quality: int = 75,
+    live_preview_output_path: str | Path | None = None,
+    live_grid_output_path: str | Path | None = None,
+    live_max_dimension: int = 1600,
+    live_jpeg_quality: int = 45,
+    target: Literal["primary-screen", "virtual-screen"] = "virtual-screen",
 ) -> tuple[CaptureResult, CaptureResult]:
     preview_output = Path(preview_output_path)
     grid_output = Path(grid_output_path)
     _ensure_parent(preview_output)
     _ensure_parent(grid_output)
 
-    region = _get_primary_monitor_region()
+    region = _get_virtual_monitor_region() if target == "virtual-screen" else _get_primary_monitor_region()
     bounds = (
         region["left"],
         region["top"],
@@ -567,11 +603,13 @@ def capture_observation_pair(
         region["top"] + region["height"],
     )
     image = _grab_region(region)
+    captured_monotonic_ns = time.monotonic_ns()
+    screen_digest = _screen_digest(image)
 
-    _save_image(image, preview_output, image_format="jpeg", jpeg_quality=jpeg_quality)
+    _save_image(image, preview_output, image_format="jpeg", jpeg_quality=jpeg_quality, optimize=False)
     preview_result = CaptureResult(
         image_path=str(preview_output),
-        target="primary-screen",
+        target=target,
         width=image.width,
         height=image.height,
         image_format="jpeg",
@@ -584,6 +622,8 @@ def capture_observation_pair(
         major_grid_size=None,
         content_origin=None,
         content_bounds_in_image=None,
+        screen_digest=screen_digest,
+        captured_monotonic_ns=captured_monotonic_ns,
     )
 
     grid_image, annotation_meta = _draw_grid(
@@ -592,10 +632,33 @@ def capture_observation_pair(
         offset_x=region["left"],
         offset_y=region["top"],
     )
-    _save_image(grid_image, grid_output, image_format="jpeg", jpeg_quality=jpeg_quality)
+    _save_image(grid_image, grid_output, image_format="jpeg", jpeg_quality=jpeg_quality, optimize=False)
+
+    if live_preview_output_path is not None:
+        live_preview_output = Path(live_preview_output_path)
+        _ensure_parent(live_preview_output)
+        live_preview = _resize_for_live_display(image, max_dimension=live_max_dimension)
+        _save_image(
+            live_preview,
+            live_preview_output,
+            image_format="jpeg",
+            jpeg_quality=live_jpeg_quality,
+            optimize=False,
+        )
+    if live_grid_output_path is not None:
+        live_grid_output = Path(live_grid_output_path)
+        _ensure_parent(live_grid_output)
+        live_grid = _resize_for_live_display(grid_image, max_dimension=live_max_dimension)
+        _save_image(
+            live_grid,
+            live_grid_output,
+            image_format="jpeg",
+            jpeg_quality=live_jpeg_quality,
+            optimize=False,
+        )
     grid_result = CaptureResult(
         image_path=str(grid_output),
-        target="primary-screen",
+        target=target,
         width=grid_image.width,
         height=grid_image.height,
         image_format="jpeg",
@@ -609,6 +672,8 @@ def capture_observation_pair(
         major_grid_size=int(annotation_meta["major_grid_size"]),
         content_origin=tuple(annotation_meta["content_origin"]),
         content_bounds_in_image=tuple(annotation_meta["content_bounds_in_image"]),
+        screen_digest=screen_digest,
+        captured_monotonic_ns=captured_monotonic_ns,
     )
     return preview_result, grid_result
 
@@ -630,7 +695,15 @@ def export_live_display_image(
     with Image.open(source_path) as source_image:
         image = source_image.convert("RGB")
 
-    if max(image.size) > max_dimension:
-        image.thumbnail((max_dimension, max_dimension), resample=Image.Resampling.LANCZOS)
+    image = _resize_for_live_display(image, max_dimension=max_dimension)
 
-    _save_image(image, output, image_format="jpeg", jpeg_quality=jpeg_quality)
+    _save_image(image, output, image_format="jpeg", jpeg_quality=jpeg_quality, optimize=False)
+
+
+def _resize_for_live_display(image: Image.Image, *, max_dimension: int) -> Image.Image:
+    if max_dimension <= 0:
+        raise ValueError("max_dimension must be greater than 0")
+    result = image.convert("RGB").copy()
+    if max(result.size) > max_dimension:
+        result.thumbnail((max_dimension, max_dimension), resample=Image.Resampling.LANCZOS)
+    return result

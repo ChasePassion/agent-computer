@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from urllib.parse import urlparse
 
@@ -7,7 +8,17 @@ import pyautogui
 import win32clipboard
 
 pyautogui.FAILSAFE = True
-pyautogui.PAUSE = 0.15
+
+
+def _input_pause_seconds() -> float:
+    raw = os.getenv("AGENT_COMPUTER_INPUT_PAUSE_SEC", "0.03")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 0.03
+
+
+pyautogui.PAUSE = _input_pause_seconds()
 
 
 def mouse_position() -> tuple[int, int]:
@@ -31,7 +42,7 @@ def scroll(amount: int) -> None:
     pyautogui.scroll(amount)
 
 
-def type_text(text: str, interval: float = 0.02) -> None:
+def type_text(text: str, interval: float = 0.0) -> None:
     pyautogui.write(text, interval=interval)
 
 

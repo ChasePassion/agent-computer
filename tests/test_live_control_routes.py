@@ -44,20 +44,31 @@ class StubActions:
         return {"ok": True, "action": "hotkey", **payload}
 
 
-def build_client() -> tuple[TestClient, StubActions]:
+class StubActionCoordinator:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def execute_batch(self, request):
+        self.requests.append(request)
+        return {"ok": True, "actions": [item.kind for item in request.actions]}
+
+
+def build_client() -> tuple[TestClient, StubActions, StubActionCoordinator]:
     app = FastAPI()
     actions = StubActions()
+    action_coordinator = StubActionCoordinator()
     app.state.registry = SimpleNamespace(
         observation=StubObservationService(),
         actions=actions,
+        action_coordinator=action_coordinator,
         execution_lock=threading.RLock(),
     )
     app.include_router(live_control_router)
-    return TestClient(app), actions
+    return TestClient(app), actions, action_coordinator
 
 
 def test_live_control_requires_token() -> None:
-    client, _actions = build_client()
+    client, _actions, _coordinator = build_client()
 
     with client:
         response = client.post("/live/control/press", json={"key": "enter"})
@@ -67,7 +78,7 @@ def test_live_control_requires_token() -> None:
 
 
 def test_live_control_click_and_paste_forward_to_actions() -> None:
-    client, actions = build_client()
+    client, actions, _coordinator = build_client()
 
     with client:
         click_response = client.post(
@@ -90,7 +101,7 @@ def test_live_control_click_and_paste_forward_to_actions() -> None:
 
 
 def test_live_control_press_and_hotkey_forward_to_actions() -> None:
-    client, actions = build_client()
+    client, actions, _coordinator = build_client()
 
     with client:
         press_response = client.post("/live/control/press", params={"token": "TOKEN123"}, json={"key": "enter"})
@@ -105,3 +116,24 @@ def test_live_control_press_and_hotkey_forward_to_actions() -> None:
         ("hotkey", {"keys": ["ctrl", "v"]}),
         ("scroll", {"amount": -600}),
     ]
+
+
+def test_live_control_batch_uses_one_coordinated_transaction() -> None:
+    client, _actions, coordinator = build_client()
+
+    with client:
+        response = client.post(
+            "/live/control/batch",
+            params={"token": "TOKEN123"},
+            json={
+                "actions": [
+                    {"kind": "paste", "text": "hello", "restore_clipboard": False},
+                    {"kind": "press", "key": "enter"},
+                ],
+                "verify": {"kind": "fresh_frame"},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["actions"] == ["paste", "press"]
+    assert len(coordinator.requests) == 1

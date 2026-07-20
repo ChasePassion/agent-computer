@@ -169,12 +169,18 @@ def list_windows() -> list[WindowInfo]:
 def find_window(title_query: str, exact: bool = False) -> WindowInfo:
     query = title_query.casefold()
     candidates = list_windows()
-    for window in candidates:
-        title = window.title.casefold()
-        if exact and title == query:
-            return window
-        if not exact and query in title:
-            return window
+    exact_matches = [window for window in candidates if window.title.casefold() == query]
+    matches = exact_matches if exact or exact_matches else [
+        window for window in candidates if query in window.title.casefold()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        choices = "; ".join(f"hwnd={window.hwnd} title={window.title!r}" for window in matches[:8])
+        raise RuntimeError(
+            f"Ambiguous visible window match for {title_query!r}: {choices}. "
+            "Use a unique exact title or a UIA nodeRef bound to the intended window handle."
+        )
 
     raise RuntimeError(f"No visible window matched: {title_query}")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -35,15 +36,33 @@ class DaemonClient:
         self.base_url = daemon_base_url(host, port)
         self.timeout_sec = timeout_sec
         self.startup_timeout_sec = startup_timeout_sec
+        self._client: httpx.Client | None = None
+        self._client_lock = threading.RLock()
+        self._startup_lock = threading.Lock()
 
     def _http_client(self) -> httpx.Client:
-        return httpx.Client(base_url=self.base_url, timeout=self.timeout_sec)
+        with self._client_lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout_sec)
+            return self._client
+
+    def close(self) -> None:
+        with self._client_lock:
+            client = self._client
+            self._client = None
+        if client is not None and not client.is_closed:
+            client.close()
+
+    def __enter__(self) -> "DaemonClient":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
 
     def health(self) -> dict[str, Any]:
-        with self._http_client() as client:
-            response = client.get("/system/health")
-            response.raise_for_status()
-            return response.json()
+        response = self._http_client().get("/system/health")
+        response.raise_for_status()
+        return response.json()
 
     def is_running(self) -> bool:
         try:
@@ -55,6 +74,10 @@ class DaemonClient:
     def start_background(self) -> None:
         if self.is_running():
             return
+
+        self._spawn_background()
+
+    def _spawn_background(self) -> None:
 
         command = [
             str(sys.executable),
@@ -92,20 +115,47 @@ class DaemonClient:
         raise RuntimeError("Timed out waiting for agent-computer daemon to become ready.") from last_error
 
     def ensure_running(self) -> dict[str, Any]:
-        if self.is_running():
+        try:
             return self.health()
-        self.start_background()
-        return self.wait_until_ready()
+        except httpx.TransportError:
+            self._spawn_background()
+            return self.wait_until_ready()
 
-    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
-        self.ensure_running()
-        with self._http_client() as client:
-            response = client.request(method=method, url=path, json=payload)
-            response.raise_for_status()
-            return response.json()
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        response = self._http_client().request(method=method, url=path, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        # The hot path is one business request. Starting the daemon is only a
+        # recovery path after a real transport failure, avoiding health probes
+        # before every atomic agent action.
+        try:
+            return self._request_once(method, path, payload, headers=headers)
+        except httpx.ConnectError:
+            with self._startup_lock:
+                try:
+                    return self._request_once(method, path, payload, headers=headers)
+                except httpx.ConnectError:
+                    self._spawn_background()
+                    self.wait_until_ready()
+            return self._request_once(method, path, payload, headers=headers)
 
     def shutdown(self) -> dict[str, Any]:
-        with self._http_client() as client:
-            response = client.post("/system/shutdown")
-            response.raise_for_status()
-            return response.json()
+        response = self._http_client().post("/system/shutdown")
+        response.raise_for_status()
+        return response.json()

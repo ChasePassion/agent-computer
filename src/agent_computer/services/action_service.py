@@ -21,7 +21,7 @@ class ActionService:
         scroll(amount)
         return {"scrolled": amount}
 
-    def type_text(self, *, text: str, interval: float = 0.02) -> dict[str, Any]:
+    def type_text(self, *, text: str, interval: float = 0.0) -> dict[str, Any]:
         type_text(text, interval=interval)
         return {"typed_length": len(text), "interval": interval}
 

@@ -237,8 +237,14 @@ _SCRIPT = """
 const shell = document.querySelector(".shell");
 const token = shell.dataset.token;
 let mode = shell.dataset.mode;
-let lastFrameSeq = -1;
+let lastFrameIdentity = "";
 let pollTimer = null;
+let pollInFlight = false;
+let pollPending = false;
+let pollFailureCount = 0;
+let pollGeneration = 0;
+let lastOutputRevision = "";
+let lastSessionsRevision = "";
 let frameMeta = null;
 let selectedPoint = null;
 let controlBusy = false;
@@ -282,7 +288,7 @@ const actionButtons = [
   document.getElementById("esc-btn"),
 ];
 
-function liveStateUrl() { return `/live/state.json?token=${encodeURIComponent(token)}&mode=${encodeURIComponent(mode)}`; }
+function liveStateUrl(requestedMode = mode) { return `/live/state.json?token=${encodeURIComponent(token)}&mode=${encodeURIComponent(requestedMode)}`; }
 function controlUrl(path) { return `/live/control/${path}?token=${encodeURIComponent(token)}`; }
 function liveSessionSelectUrl() { return `/live/session/select?token=${encodeURIComponent(token)}`; }
 function parseTime(value) { const ms = Date.parse(value || ""); return Number.isNaN(ms) ? null : ms; }
@@ -352,26 +358,55 @@ function applyFrame(framePayload) {
   const cursor = framePayload.mouse_position;
   cursorLabel.textContent = cursor ? `(${cursor.x}, ${cursor.y})` : "-";
   screenMeta.textContent = `Watching latest ${mode} frame`;
-  if (framePayload.frame_seq !== lastFrameSeq) {
-    frame.src = `${framePayload.image_url}&ts=${Date.now()}`;
-    lastFrameSeq = framePayload.frame_seq;
+  const frameIdentity = `${framePayload.mode || mode}:${framePayload.frame_seq}`;
+  if (frameIdentity !== lastFrameIdentity) {
+    frame.src = `${framePayload.image_url}&frame_seq=${encodeURIComponent(framePayload.frame_seq)}`;
+    lastFrameIdentity = frameIdentity;
   }
+}
+
+function outputRevision(output) {
+  return [output?.seq, output?.updated_at, output?.heartbeat_at, output?.status, output?.thread_id, output?.turn_id].join("|");
+}
+
+function sessionsRevision(sessions) {
+  return JSON.stringify(sessions || {});
 }
 
 function parseFramePoint(event) {
   if (!frameMeta) return null;
   const rect = frame.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  const rawX = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
-  const rawY = Math.max(0, Math.min(event.clientY - rect.top, rect.height));
-  const width = Number(frameMeta.desktop_width || frameMeta.width || 0);
-  const height = Number(frameMeta.desktop_height || frameMeta.height || 0);
-  if (!width || !height) return null;
-  const x = Math.round((rawX / rect.width) * width);
-  const y = Math.round((rawY / rect.height) * height);
+  const imageWidth = Number(frameMeta.width || frame.naturalWidth || 0);
+  const imageHeight = Number(frameMeta.height || frame.naturalHeight || 0);
+  if (!imageWidth || !imageHeight) return null;
+  const fittedScale = Math.min(rect.width / imageWidth, rect.height / imageHeight);
+  const fittedWidth = imageWidth * fittedScale;
+  const fittedHeight = imageHeight * fittedScale;
+  const fittedLeft = (rect.width - fittedWidth) / 2;
+  const fittedTop = (rect.height - fittedHeight) / 2;
+  const clientX = event.clientX - rect.left;
+  const clientY = event.clientY - rect.top;
+  if (clientX < fittedLeft || clientY < fittedTop || clientX >= fittedLeft + fittedWidth || clientY >= fittedTop + fittedHeight) return null;
+  const imageX = (clientX - fittedLeft) / fittedScale;
+  const imageY = (clientY - fittedTop) / fittedScale;
+  const content = Array.isArray(frameMeta.content_bounds_in_image)
+    ? frameMeta.content_bounds_in_image.map(Number)
+    : [0, 0, imageWidth, imageHeight];
+  const [contentLeft, contentTop, contentRight, contentBottom] = content;
+  if (imageX < contentLeft || imageY < contentTop || imageX >= contentRight || imageY >= contentBottom) return null;
+  const bounds = Array.isArray(frameMeta.bounds)
+    ? frameMeta.bounds.map(Number)
+    : [0, 0, Number(frameMeta.desktop_width || imageWidth), Number(frameMeta.desktop_height || imageHeight)];
+  const [desktopLeft, desktopTop, desktopRight, desktopBottom] = bounds;
+  const contentWidth = contentRight - contentLeft;
+  const contentHeight = contentBottom - contentTop;
+  if (contentWidth <= 0 || contentHeight <= 0 || desktopRight <= desktopLeft || desktopBottom <= desktopTop) return null;
+  const x = desktopLeft + Math.floor(((imageX - contentLeft) / contentWidth) * (desktopRight - desktopLeft));
+  const y = desktopTop + Math.floor(((imageY - contentTop) / contentHeight) * (desktopBottom - desktopTop));
   return {
-    point: { x: Math.max(0, Math.min(x, width)), y: Math.max(0, Math.min(y, height)) },
-    clientPoint: { x: rawX, y: rawY },
+    point: { x: Math.max(desktopLeft, Math.min(x, desktopRight - 1)), y: Math.max(desktopTop, Math.min(y, desktopBottom - 1)) },
+    clientPoint: { x: clientX, y: clientY },
   };
 }
 
@@ -667,23 +702,59 @@ async function selectSession(sessionId) {
 }
 
 function triggerImmediatePoll() {
+  pollPending = true;
   if (pollTimer !== null) {
     clearTimeout(pollTimer);
     pollTimer = null;
   }
-  poll();
+  if (!pollInFlight && !document.hidden) {
+    pollPending = false;
+    void poll();
+  }
+}
+
+function schedulePoll(delayMs) {
+  if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = window.setTimeout(() => {
+    pollTimer = null;
+    void poll();
+  }, delayMs);
 }
 
 async function poll() {
+  if (document.hidden) return;
+  if (pollInFlight) {
+    pollPending = true;
+    return;
+  }
+  pollInFlight = true;
+  const requestedMode = mode;
+  const generation = ++pollGeneration;
+  let nextDelayMs = 1000;
   try {
-    const response = await fetch(liveStateUrl(), { cache: "no-store" });
+    const response = await fetch(liveStateUrl(requestedMode), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
+    if (generation !== pollGeneration || requestedMode !== mode) {
+      pollPending = true;
+      return;
+    }
     applyFrame(payload.frame);
-    applyOutput(payload.output);
-    applySessions(payload.sessions);
+    const nextOutputRevision = outputRevision(payload.output);
+    if (nextOutputRevision !== lastOutputRevision) {
+      applyOutput(payload.output);
+      lastOutputRevision = nextOutputRevision;
+    }
+    const nextSessionsRevision = sessionsRevision(payload.sessions);
+    if (nextSessionsRevision !== lastSessionsRevision) {
+      applySessions(payload.sessions);
+      lastSessionsRevision = nextSessionsRevision;
+    }
+    pollFailureCount = 0;
     if (!selectedPoint) setStatus("Tap the screen image to pick a point.");
   } catch (_error) {
+    pollFailureCount += 1;
+    nextDelayMs = Math.min(30000, 1000 * (2 ** Math.min(pollFailureCount - 1, 5)));
     updatedLabel.textContent = "waiting";
     resolutionLabel.textContent = "-";
     cursorLabel.textContent = "-";
@@ -691,10 +762,28 @@ async function poll() {
     setStatus("Waiting for daemon", "error");
     resetOutput();
     resetSessions();
+    lastOutputRevision = "";
+    lastSessionsRevision = "";
   } finally {
-    pollTimer = window.setTimeout(poll, 1000);
+    pollInFlight = false;
+    if (document.hidden) return;
+    if (pollPending) {
+      pollPending = false;
+      schedulePoll(0);
+    } else {
+      schedulePoll(nextDelayMs);
+    }
   }
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (pollTimer !== null) clearTimeout(pollTimer);
+    pollTimer = null;
+    return;
+  }
+  triggerImmediatePoll();
+});
 
 frame.addEventListener("click", (event) => {
   const parsed = parseFramePoint(event);
@@ -746,8 +835,13 @@ document.getElementById("paste-enter-btn").addEventListener("click", async () =>
     setStatus("Write a message first.", "error");
     return;
   }
-  const pasted = await runControl("Paste", "paste", { text, restore_clipboard: false });
-  if (pasted) await runPress("Enter", "enter");
+  await runControl("Paste + Enter", "batch", {
+    actions: [
+      { kind: "paste", text, restore_clipboard: false },
+      { kind: "press", key: "enter" },
+    ],
+    verify: { kind: "fresh_frame" },
+  });
 });
 
 document.getElementById("ctrl-c-btn").addEventListener("click", async () => {

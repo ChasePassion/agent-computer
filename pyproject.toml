@@ -28,11 +28,13 @@ dependencies = [
   "fastapi>=0.115.0",
   "httpx>=0.28.1",
   "mss>=10.0.0",
+  "mcp>=1.26.0,<2",
   "Pillow>=10.4.0",
   "paramiko>=4.0.0",
   "pydantic>=2.9.0",
   "pyautogui>=0.9.54",
   "pywin32>=308; platform_system == 'Windows'",
+  "uiautomation>=2.0.29,<3; platform_system == 'Windows'",
   "uvicorn>=0.32.0",
 ]
 
@@ -44,6 +46,8 @@ Issues = "https://github.com/ChasePassion/agent-computer/issues"
 [project.scripts]
 agent-computer = "agent_computer.cli:main"
 agent-computer-daemon = "agent_computer.daemon:main"
+agent-computer-mcp = "agent_computer.mcp_server:main"
+agent-computer-pipe = "agent_computer.stdio_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

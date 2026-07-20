@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import string
+import time
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -12,14 +13,16 @@ from fastapi import WebSocket
 from agent_computer.retry import RetryDisposition, RetryDispositionError, classify_browser_assist_error, normalize_retry_disposition
 from agent_computer.runtime import browser_assist_config_path, read_json, write_json
 from agent_computer.services.session_service import SessionService
+from agent_computer.structured_logging import get_event_logger, log_event
 
 PROTOCOL_VERSION = 1
 BrowserAssistRequestType = Literal["locate", "observe", "act"]
 BrowserAssistResultType = Literal["locate-result", "observe-result", "act-result"]
+LOGGER = get_event_logger("browser-assist")
 
 
 class BrowserAssistConnectionManager:
-    def __init__(self, session: SessionService) -> None:
+    def __init__(self, session: SessionService, *, metrics: Any | None = None) -> None:
         self.session = session
         self._lock = asyncio.Lock()
         self._websocket: WebSocket | None = None
@@ -32,6 +35,7 @@ class BrowserAssistConnectionManager:
         self._tab_sessions: dict[str, dict[str, Any]] = {}
         self._current_tab_session_id: str | None = None
         self._preferred_tab_session_id: str | None = None
+        self.metrics = metrics
         self.session.set_browser_assist_token(self._token)
 
     def token(self) -> str:
@@ -64,6 +68,8 @@ class BrowserAssistConnectionManager:
             "currentFrameId": current_session.get("frameId"),
             "currentWindowId": current_session.get("windowId"),
             "currentDocumentEpoch": current_session.get("documentEpoch"),
+            "currentDocumentId": current_session.get("documentId"),
+            "currentPageNonce": current_session.get("pageNonce"),
         }
 
     async def accept(self, websocket: WebSocket) -> None:
@@ -182,6 +188,7 @@ class BrowserAssistConnectionManager:
         *,
         timeout_sec: float = 3.0,
     ) -> dict[str, Any]:
+        started_ns = time.monotonic_ns()
         request_id = f"req-{uuid4().hex}"
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
@@ -210,23 +217,70 @@ class BrowserAssistConnectionManager:
                 self._last_error = str(exc)
                 self._preferred_tab_session_id = None
                 self._sync_session_locked()
+            self._record_request_metric(request_type, started_ns, "failed")
+            log_event(
+                LOGGER,
+                event="browser_assist.send_failed",
+                message="Browser Assist request could not be sent",
+                outcome="failed",
+                request_type=request_type,
+            )
             raise RetryDispositionError(
                 f"Failed to send Browser Assist {request_type} request: {exc}",
                 retry_disposition=RetryDisposition.CONTEXT_LOST,
             ) from exc
 
         try:
-            return await asyncio.wait_for(future, timeout=timeout_sec)
+            result = await asyncio.wait_for(future, timeout=timeout_sec)
         except asyncio.TimeoutError as exc:
+            action_outcome_unknown = request_type == "act"
             async with self._lock:
                 self._pending.pop(request_id, None)
                 self._last_error = f"Browser Assist {request_type} request timed out after {timeout_sec:.1f}s."
+                if action_outcome_unknown:
+                    self._last_error += " The action may have executed; do not retry it automatically."
                 self._sync_session_locked()
+            self._record_request_metric(request_type, started_ns, "timeout")
+            log_event(
+                LOGGER,
+                event="browser_assist.request_timeout",
+                message="Browser Assist request timed out",
+                outcome="timeout",
+                request_type=request_type,
+                timeout_ms=round(timeout_sec * 1000, 3),
+            )
             raise RetryDispositionError(
                 self._last_error,
-                retry_disposition=RetryDisposition.RETRY_SAME_TARGET,
-                details={"requestType": request_type},
+                retry_disposition=(
+                    RetryDisposition.FAIL_FAST
+                    if action_outcome_unknown
+                    else RetryDisposition.RETRY_SAME_TARGET
+                ),
+                details=(
+                    {
+                        "requestType": request_type,
+                        "outcome": "unknown",
+                        "actionMayHaveExecuted": True,
+                    }
+                    if action_outcome_unknown
+                    else {"requestType": request_type}
+                ),
             ) from exc
+        except Exception:
+            self._record_request_metric(request_type, started_ns, "failed")
+            raise
+        self._record_request_metric(request_type, started_ns, "success")
+        return result
+
+    def _record_request_metric(self, request_type: str, started_ns: int, outcome: str) -> None:
+        if self.metrics is None or not hasattr(self.metrics, "record"):
+            return
+        duration_ms = (time.monotonic_ns() - started_ns) / 1_000_000
+        self.metrics.record(
+            f"browser_assist.{request_type}",
+            duration_ms=duration_ms,
+            outcome=outcome,
+        )
 
     async def request_locate(self, payload: dict[str, Any], *, timeout_sec: float = 6.0) -> dict[str, Any]:
         return await self.request("locate", payload, timeout_sec=timeout_sec)
@@ -277,8 +331,15 @@ class BrowserAssistConnectionManager:
 
         if tab_session_id:
             request_payload["tabSessionId"] = tab_session_id
+            current_session = self._tab_sessions.get(tab_session_id) or {}
+            for key in ("documentEpoch", "documentId", "pageNonce"):
+                if request_payload.get(key) is None and current_session.get(key) is not None:
+                    request_payload[key] = current_session[key]
             if isinstance(node_ref, dict):
                 node_ref["tabSessionId"] = tab_session_id
+                for key in ("documentEpoch", "documentId", "pageNonce"):
+                    if node_ref.get(key) is None and current_session.get(key) is not None:
+                        node_ref[key] = current_session[key]
                 request_payload["nodeRef"] = node_ref
 
         return request_payload
@@ -322,6 +383,8 @@ class BrowserAssistConnectionManager:
             "url": self._coerce_str(payload.get("url")),
             "title": self._coerce_str(payload.get("title")),
             "documentEpoch": self._coerce_int(payload.get("documentEpoch"), default=0) or 0,
+            "documentId": self._coerce_str(payload.get("documentId")),
+            "pageNonce": self._coerce_str(payload.get("pageNonce")),
         }
         self._tab_sessions[tab_session_id] = session_payload
         self._current_tab_session_id = tab_session_id

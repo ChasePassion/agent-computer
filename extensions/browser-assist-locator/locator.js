@@ -3,12 +3,21 @@
     return;
   }
 
+  const protocol = globalThis.BrowserAssistProtocol;
+  if (!protocol) {
+    throw new Error("BrowserAssistProtocol must be loaded before locator.js.");
+  }
+
   const QUERY_SELECTOR = [
     "button",
     "a[href]",
+    "area[href]",
     "input",
     "textarea",
     "select",
+    "option",
+    "summary",
+    "[contenteditable]:not([contenteditable='false'])",
     "[role]",
     "[tabindex]",
     "[onclick]",
@@ -19,7 +28,33 @@
     "li",
     "label",
     "article",
-    "section"
+    "section",
+    "aside",
+    "details",
+    "dialog",
+    "form",
+    "header",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "img",
+    "main",
+    "menu",
+    "meter",
+    "nav",
+    "ol",
+    "output",
+    "progress",
+    "table",
+    "td",
+    "th",
+    "tr",
+    "ul",
+    "[aria-labelledby]"
   ].join(", ");
   const RETRY = Object.freeze({
     RETRY_SAME_TARGET: "retry_same_target",
@@ -29,12 +64,18 @@
 
   function createRuntime() {
     const state = {
+      ...protocol.createDocumentIdentity(),
       documentEpoch: 1,
       nextNodeId: 1,
       nodeRefs: new WeakMap(),
       nodeLookup: new Map(),
       pendingWeight: 0,
       timer: null
+    };
+
+    const bumpDocumentEpoch = () => {
+      state.documentEpoch += 1;
+      state.nodeLookup.clear();
     };
 
     const observer = new MutationObserver((records) => {
@@ -55,7 +96,7 @@
       }
       state.timer = setTimeout(() => {
         if (state.pendingWeight >= 24) {
-          state.documentEpoch += 1;
+          bumpDocumentEpoch();
         }
         state.pendingWeight = 0;
         state.timer = null;
@@ -70,13 +111,13 @@
     });
 
     window.addEventListener("hashchange", () => {
-      state.documentEpoch += 1;
+      bumpDocumentEpoch();
     });
     window.addEventListener("popstate", () => {
-      state.documentEpoch += 1;
+      bumpDocumentEpoch();
     });
     window.addEventListener("beforeunload", () => {
-      state.documentEpoch += 1;
+      bumpDocumentEpoch();
     });
 
     return state;
@@ -131,8 +172,59 @@
       viewportWidth: Math.round(window.innerWidth),
       viewportHeight: Math.round(window.innerHeight),
       devicePixelRatio: window.devicePixelRatio,
-      documentEpoch: runtime().documentEpoch
+      documentEpoch: runtime().documentEpoch,
+      documentId: runtime().documentId,
+      pageNonce: runtime().pageNonce
     };
+  }
+
+  function queryElementsDeep(selector = QUERY_SELECTOR) {
+    const matches = [];
+    const seen = new Set();
+
+    function visit(root) {
+      if (!root || typeof root.querySelectorAll !== "function") {
+        return;
+      }
+      for (const element of root.querySelectorAll(selector)) {
+        if (!seen.has(element)) {
+          seen.add(element);
+          matches.push(element);
+        }
+      }
+      for (const element of root.querySelectorAll("*")) {
+        if (element.shadowRoot) {
+          visit(element.shadowRoot);
+        }
+      }
+    }
+
+    visit(document);
+    return matches;
+  }
+
+  function deepElementFromPoint(x, y) {
+    let element = document.elementFromPoint(x, y);
+    while (element?.shadowRoot && typeof element.shadowRoot.elementFromPoint === "function") {
+      const nested = element.shadowRoot.elementFromPoint(x, y);
+      if (!nested || nested === element) {
+        break;
+      }
+      element = nested;
+    }
+    return element;
+  }
+
+  function ownsDeepNode(element, node) {
+    let current = node;
+    while (current instanceof Node) {
+      if (current === element || element.contains(current)) {
+        return true;
+      }
+      const root = typeof current.getRootNode === "function" ? current.getRootNode() : null;
+      current = root instanceof ShadowRoot ? root.host : null;
+    }
+    return false;
   }
 
   function browserAnchor() {
@@ -190,29 +282,15 @@
   function roleOf(element) {
     const explicit = element.getAttribute("role");
     if (explicit) {
-      return explicit;
+      return explicit.trim().split(/\s+/)[0].toLowerCase();
     }
-    const tag = element.tagName.toLowerCase();
-    if (tag === "button") {
-      return "button";
-    }
-    if (tag === "a") {
-      return "link";
-    }
-    if (tag === "textarea") {
-      return "textarea";
-    }
-    if (tag === "select" || tag === "input") {
-      const type = (element.getAttribute("type") || "text").toLowerCase();
-      if (type === "checkbox") {
-        return "checkbox";
+    const attributes = {};
+    for (const name of ["alt", "aria-label", "aria-labelledby", "contenteditable", "href", "multiple", "size", "scope", "title", "type"]) {
+      if (element.hasAttribute(name)) {
+        attributes[name] = element.getAttribute(name) ?? "";
       }
-      if (type === "radio") {
-        return "radio";
-      }
-      return "input";
     }
-    return "any";
+    return protocol.implicitRoleFor(element.tagName, attributes);
   }
 
   function selectedState(element) {
@@ -236,7 +314,22 @@
   }
 
   function isEditable(element, role) {
-    return element.isContentEditable || role === "input" || role === "textarea" || element.tagName.toLowerCase() === "select";
+    return (
+      element.isContentEditable ||
+      ["combobox", "input", "listbox", "searchbox", "spinbutton", "textarea", "textbox"].includes(role) ||
+      element.tagName.toLowerCase() === "select"
+    );
+  }
+
+  function isInteractive(element, role) {
+    if (protocol.isInteractiveRole(role)) {
+      return true;
+    }
+    if (element.isContentEditable || element.hasAttribute("onclick")) {
+      return true;
+    }
+    const tabIndex = Number.parseInt(element.getAttribute("tabindex"), 10);
+    return Number.isFinite(tabIndex) && tabIndex >= 0;
   }
 
   function computeVisibleRect(rect) {
@@ -258,46 +351,35 @@
     const visibleRect = computeVisibleRect(rect);
     const cx = Math.round(visibleRect.left + visibleRect.width / 2);
     const cy = Math.round(visibleRect.top + visibleRect.height / 2);
-    const node = document.elementFromPoint(cx, cy);
-    const owned = node === element || element.contains(node) || (node instanceof Element && node.contains(element));
+    const node = deepElementFromPoint(cx, cy);
+    const owned = ownsDeepNode(element, node);
     return {
       point: { x: cx, y: cy },
       occluded: !owned
     };
   }
 
-  async function actionability(element, role) {
-    const sample = () => {
-      const rect = element.getBoundingClientRect();
-      const visibleRect = computeVisibleRect(rect);
-      const clickable = clickableSample(element, rect);
-      return {
-        rect: roundRect(rect),
-        visibleRect: roundRect(visibleRect),
-        visibleRatio: rect.width > 0 && rect.height > 0 ? Number(((visibleRect.width * visibleRect.height) / (rect.width * rect.height)).toFixed(4)) : 0,
-        fullyVisible: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
-        clickablePoint: clickable.point,
-        attached: Boolean(element.isConnected),
-        visible: rect.width > 0 && rect.height > 0 && visibleRect.width > 0 && visibleRect.height > 0,
-        notOccluded: !clickable.occluded,
-        enabled: !element.hasAttribute("disabled") && element.getAttribute("aria-disabled") !== "true",
-        editable: isEditable(element, role),
-        selected: selectedState(element)
-      };
+  function sampleActionability(element, role) {
+    const rect = element.getBoundingClientRect();
+    const visibleRect = computeVisibleRect(rect);
+    const clickable = clickableSample(element, rect);
+    return {
+      rect: roundRect(rect),
+      visibleRect: roundRect(visibleRect),
+      visibleRatio: rect.width > 0 && rect.height > 0 ? Number(((visibleRect.width * visibleRect.height) / (rect.width * rect.height)).toFixed(4)) : 0,
+      fullyVisible: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+      clickablePoint: clickable.point,
+      attached: Boolean(element.isConnected),
+      visible: rect.width > 0 && rect.height > 0 && visibleRect.width > 0 && visibleRect.height > 0,
+      notOccluded: !clickable.occluded,
+      enabled: !element.hasAttribute("disabled") && element.getAttribute("aria-disabled") !== "true",
+      editable: isEditable(element, role),
+      selected: selectedState(element)
     };
+  }
 
-    const first = sample();
-    await nextFrame();
-    const second = sample();
-    const stable =
-      first.attached &&
-      second.attached &&
-      Math.abs(first.rect.left - second.rect.left) <= 2 &&
-      Math.abs(first.rect.top - second.rect.top) <= 2 &&
-      Math.abs(first.rect.width - second.rect.width) <= 2 &&
-      Math.abs(first.rect.height - second.rect.height) <= 2 &&
-      first.visible === second.visible &&
-      first.notOccluded === second.notOccluded;
+  function summarizeActionability(first, second) {
+    const stable = protocol.samplesAreStable(first, second);
     const current = second.attached ? second : first;
     return {
       current,
@@ -313,11 +395,19 @@
     };
   }
 
+  async function actionability(element, role) {
+    const first = sampleActionability(element, role);
+    await nextFrame();
+    return summarizeActionability(first, sampleActionability(element, role));
+  }
+
   function buildNodeRef(element, previous = null) {
     const state = runtime();
     const epoch = state.documentEpoch;
     const existing = state.nodeRefs.get(element);
-    const nodeId = existing && existing.epoch === epoch ? existing.nodeId : `node-${epoch}-${state.nextNodeId++}`;
+    const nodeId = existing && existing.epoch === epoch
+      ? existing.nodeId
+      : protocol.createDomNodeId(state, epoch, state.nextNodeId++);
     state.nodeRefs.set(element, { epoch, nodeId });
     state.nodeLookup.set(nodeId, element);
     const snapshot = textSnapshot(element);
@@ -326,6 +416,8 @@
       tabSessionId: previous?.tabSessionId || null,
       frameId: previous?.frameId ?? 0,
       documentEpoch: epoch,
+      documentId: state.documentId,
+      pageNonce: state.pageNonce,
       selectorHint: selectorHint(element),
       locatorRecipe: {
         role: roleOf(element),
@@ -341,20 +433,27 @@
     if (!nodeRef || typeof nodeRef !== "object") {
       throw fail("Missing nodeRef.", RETRY.FAIL_FAST);
     }
-    if ((nodeRef.documentEpoch ?? 0) !== runtime().documentEpoch) {
-      throw fail("nodeRef documentEpoch is no longer current.", RETRY.REACQUIRE_TARGET, {
+    const state = runtime();
+    if (!protocol.nodeRefMatchesDocument(nodeRef, state, state.documentEpoch)) {
+      throw fail("nodeRef document identity is no longer current.", RETRY.REACQUIRE_TARGET, {
         requestedDocumentEpoch: nodeRef.documentEpoch,
-        currentDocumentEpoch: runtime().documentEpoch
+        currentDocumentEpoch: state.documentEpoch,
+        requestedDocumentId: nodeRef.documentId || null,
+        currentDocumentId: state.documentId
       });
     }
-    const direct = runtime().nodeLookup.get(nodeRef.nodeId);
+    const parsedNodeId = protocol.parseNodeId(nodeRef.nodeId);
+    if (parsedNodeId?.kind !== "dom") {
+      throw fail("Accessibility nodeRef must be resolved by the extension service worker.", RETRY.REACQUIRE_TARGET);
+    }
+    const direct = state.nodeLookup.get(nodeRef.nodeId);
     if (direct instanceof Element && direct.isConnected) {
       return direct;
     }
     const selector = normalizeText(nodeRef.selectorHint || nodeRef.locatorRecipe?.selectorHint || "");
     if (selector) {
       try {
-        const candidate = document.querySelector(selector);
+        const candidate = queryElementsDeep(selector)[0];
         if (candidate instanceof Element) {
           return candidate;
         }
@@ -363,7 +462,7 @@
       }
     }
     const targetText = normalizeText(nodeRef.locatorRecipe?.text || "");
-    const candidates = Array.from(document.querySelectorAll(QUERY_SELECTOR));
+    const candidates = queryElementsDeep();
     return candidates.find((element) => {
       const snapshot = textSnapshot(element);
       return !targetText || snapshot.normalized === targetText || snapshot.normalized.includes(targetText);
@@ -374,7 +473,7 @@
     const snapshot = textSnapshot(element);
     const role = roleOf(element);
     const textNeedle = normalizeText(query.text);
-    if (query.role && query.role !== "any" && role !== query.role) {
+    if (!protocol.roleMatches(query.role, role)) {
       return 0;
     }
     if (textNeedle && !snapshot.normalized.includes(textNeedle)) {
@@ -389,7 +488,7 @@
     if (query.hint && snapshot.normalized.includes(normalizeText(query.hint))) {
       score += 3;
     }
-    if (query.role === "any" || role === query.role) {
+    if (protocol.roleMatches(query.role, role)) {
       score += 4;
     }
     const rect = element.getBoundingClientRect();
@@ -400,29 +499,50 @@
   }
 
   async function locate(request) {
-    const candidates = Array.from(document.querySelectorAll(QUERY_SELECTOR))
-      .map((element) => ({
+    const scored = queryElementsDeep()
+      .map((element, order) => ({
         element,
+        order,
+        role: roleOf(element),
         score: matchScore(element, request.query)
       }))
       .filter((item) => item.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, request.options.maxCandidates);
+      .sort((left, right) => right.score - left.score || left.order - right.order);
+
+    for (const candidate of scored) {
+      candidate.firstSample = sampleActionability(candidate.element, candidate.role);
+    }
+    const firstPass = scored.filter((candidate) => (
+      (!request.options.visibleOnly || candidate.firstSample.visible) &&
+      (!request.options.interactiveOnly || isInteractive(candidate.element, candidate.role))
+    ));
+    if (firstPass.length > 0) {
+      await nextFrame();
+    }
+
+    const evaluated = firstPass.map((candidate) => ({
+      ...candidate,
+      ability: summarizeActionability(
+        candidate.firstSample,
+        sampleActionability(candidate.element, candidate.role)
+      )
+    }));
+    const candidates = protocol.filterThenLimit(
+      evaluated,
+      (candidate) => (
+        (!request.options.visibleOnly || candidate.ability.gates.visible) &&
+        (!request.options.interactiveOnly || isInteractive(candidate.element, candidate.role))
+      ),
+      request.options.maxCandidates
+    );
 
     const anchor = browserAnchor();
-    const matches = [];
-    for (let index = 0; index < candidates.length; index += 1) {
-      const element = candidates[index].element;
-      const role = roleOf(element);
+    const matches = candidates.map((candidate, index) => {
+      const element = candidate.element;
+      const role = candidate.role;
       const snapshot = textSnapshot(element);
-      const ability = await actionability(element, role);
-      if (request.options.visibleOnly && !ability.gates.visible) {
-        continue;
-      }
-      if (request.options.interactiveOnly && role === "any") {
-        continue;
-      }
-      matches.push({
+      const ability = candidate.ability;
+      return {
         id: `candidate-${index + 1}`,
         text: snapshot.normalized,
         textRaw: snapshot.raw,
@@ -440,9 +560,9 @@
         occluded: !ability.current.notOccluded,
         selected: ability.current.selected,
         actionabilityScore: ability.current.notOccluded ? 1.0 : 0.0,
-        score: candidates[index].score
-      });
-    }
+        score: candidate.score
+      };
+    });
 
     return {
       page: pageState(),
@@ -508,7 +628,7 @@
     if (verify.kind === "text_changed" || verify.kind === "selection_changed") {
       const observed = await observe({ nodeRef: fallbackNodeRef });
       if (verify.kind === "text_changed") {
-        const currentText = observed.observation.text;
+        const currentText = observed.observation.value ?? observed.observation.text;
         const expectedText = normalizeText(params.expectedText);
         if (expectedText) {
           return { verified: currentText === expectedText, observation: { baselineText: baseline.text, currentText } };
@@ -531,7 +651,7 @@
       }
       const located = await locate({
         query,
-        options: params.options || { visibleOnly: true, interactiveOnly: true, maxCandidates: 5 }
+        options: params.options || { visibleOnly: true, interactiveOnly: false, maxCandidates: 5 }
       });
       if (verify.kind === "element_disappeared") {
         return { verified: located.matchCount === 0, observation: { matchCount: located.matchCount } };
@@ -542,32 +662,45 @@
     throw fail(`Unsupported verify kind: ${verify.kind}`, RETRY.FAIL_FAST);
   }
 
-  async function runVerify(verify, nodeRef) {
-    if (!verify) {
-      return { verified: true, retryDisposition: RETRY.FAIL_FAST, failureReason: null, observation: { verificationSkipped: true } };
+  async function captureVerificationBaseline(verify, nodeRef) {
+    if (verify.kind === "url_changed") {
+      return { url: window.location.href };
     }
-    const baseline = verify.kind === "url_changed"
-      ? { url: window.location.href }
-      : verify.kind === "text_changed"
-        ? { text: (await observe({ nodeRef })).observation.text }
-        : verify.kind === "selection_changed"
-          ? { selected: (await observe({ nodeRef })).observation.selected }
-          : { matchCount: 0 };
+    if (verify.kind === "text_changed") {
+      const observation = (await observe({ nodeRef })).observation;
+      return { text: observation.value ?? observation.text };
+    }
+    if (verify.kind === "selection_changed") {
+      return { selected: (await observe({ nodeRef })).observation.selected };
+    }
+    return { matchCount: 0 };
+  }
+
+  async function runVerify(verify, nodeRef, baseline = null) {
+    if (!verify) {
+      return protocol.notRequestedVerification();
+    }
+    const effectiveBaseline = baseline || await captureVerificationBaseline(verify, nodeRef);
     const deadline = Date.now() + verify.timeoutMs;
     let lastObservation = null;
     while (true) {
-      const result = await verifyCondition(verify, nodeRef, baseline);
+      const result = await verifyCondition(verify, nodeRef, effectiveBaseline);
       lastObservation = result.observation;
       if (result.verified) {
-        return { verified: true, retryDisposition: RETRY.FAIL_FAST, failureReason: null, observation: result.observation };
+        return protocol.withVerificationStatus({
+          verified: true,
+          retryDisposition: RETRY.FAIL_FAST,
+          failureReason: null,
+          observation: result.observation
+        }, "passed");
       }
       if (Date.now() >= deadline) {
-        return {
+        return protocol.withVerificationStatus({
           verified: false,
           retryDisposition: RETRY.RETRY_SAME_TARGET,
           failureReason: `Verification timed out for ${verify.kind}.`,
           observation: lastObservation
-        };
+        }, "failed");
       }
       await sleep(verify.pollIntervalMs);
     }
@@ -685,18 +818,22 @@
     }
 
     const nodeRef = buildNodeRef(element, request.nodeRef);
+    const verificationBaseline = request.verify
+      ? await captureVerificationBaseline(request.verify, nodeRef)
+      : null;
     if (request.action === "click") {
       await applyClick(element, ability.current.clickablePoint);
     } else {
       applyType(element, String(request.text || ""));
     }
 
-    const verification = await runVerify(request.verify || null, nodeRef);
+    const verification = await runVerify(request.verify || null, nodeRef, verificationBaseline);
     return {
       action: request.action,
       nodeRef,
       actionability: ability.gates,
       verified: verification.verified,
+      verificationStatus: verification.verificationStatus,
       retryDisposition: verification.retryDisposition,
       failureReason: verification.failureReason,
       observation: verification.observation
@@ -707,7 +844,10 @@
 
   globalThis.BrowserAssistLocator = {
     act,
+    getDocumentId: () => runtime().documentId,
     getDocumentEpoch: () => runtime().documentEpoch,
+    getDocumentIdentity: () => ({ documentId: runtime().documentId, pageNonce: runtime().pageNonce }),
+    getPageNonce: () => runtime().pageNonce,
     getPageState: pageState,
     locate,
     observe

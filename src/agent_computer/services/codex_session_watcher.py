@@ -112,8 +112,20 @@ class CodexSessionWatcher:
             effective_session_id = session_id or candidate.stem
             file_entries.append((stat.st_mtime, candidate, effective_session_id))
 
-        file_entries.sort(key=lambda item: item[0], reverse=True)
         session_index = self._read_session_index()
+        file_entries.sort(
+            key=lambda item: (
+                self._timestamp_from_iso(
+                    self._normalize_optional_text(
+                        session_index.get(item[2], {}).get("updated_at")
+                    ),
+                    fallback=item[0],
+                ),
+                item[0],
+                str(item[1]),
+            ),
+            reverse=True,
+        )
         codex_windows = self._discover_codex_window_titles()
         seen_session_ids: set[str] = set()
         sessions: list[dict[str, Any]] = []
@@ -535,3 +547,12 @@ class CodexSessionWatcher:
     @staticmethod
     def _iso_from_timestamp(value: float) -> str:
         return datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")
+
+    @staticmethod
+    def _timestamp_from_iso(value: str | None, *, fallback: float) -> float:
+        if not value:
+            return fallback
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return fallback

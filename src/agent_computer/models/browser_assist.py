@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent_computer.retry import RetryDisposition
 
-LocatorRole = Literal["button", "link", "input", "textarea", "tab", "checkbox", "radio", "any"]
+LocatorRole = str
 BrowserAssistActionKind = Literal["click", "type", "navigate"]
+BrowserAssistVerificationStatus = Literal["passed", "failed", "not_requested"]
 BrowserAssistVerifyKind = Literal[
     "text_changed",
     "url_changed",
@@ -35,6 +36,12 @@ class BrowserAssistQuery(BaseModel):
     role: LocatorRole = "any"
     hint: str | None = None
 
+    @field_validator("role")
+    @classmethod
+    def normalize_role(cls, value: str) -> str:
+        normalized = str(value or "any").strip().lower()
+        return normalized or "any"
+
 
 class BrowserAssistOptions(BaseModel):
     visibleOnly: bool = True
@@ -47,6 +54,8 @@ class BrowserAssistLocateRequest(BaseModel):
     options: BrowserAssistOptions = Field(default_factory=BrowserAssistOptions)
     tabSessionId: str | None = None
     documentEpoch: int | None = Field(default=None, ge=0)
+    documentId: str | None = None
+    pageNonce: str | None = None
 
 
 class BrowserTabSession(BaseModel):
@@ -57,6 +66,8 @@ class BrowserTabSession(BaseModel):
     url: str | None = None
     title: str | None = None
     documentEpoch: int = Field(default=0, ge=0)
+    documentId: str | None = None
+    pageNonce: str | None = None
 
 
 class BrowserAssistPageState(BaseModel):
@@ -68,6 +79,8 @@ class BrowserAssistPageState(BaseModel):
     viewportHeight: int
     devicePixelRatio: float = Field(gt=0)
     documentEpoch: int = Field(default=0, ge=0)
+    documentId: str | None = None
+    pageNonce: str | None = None
 
 
 class BrowserAssistViewportState(BaseModel):
@@ -120,6 +133,8 @@ class BrowserAssistNodeRef(BaseModel):
     tabSessionId: str | None = None
     frameId: int | None = Field(default=None, ge=0)
     documentEpoch: int = Field(default=0, ge=0)
+    documentId: str | None = None
+    pageNonce: str | None = None
     selectorHint: str | None = None
     locatorRecipe: BrowserAssistLocatorRecipe = Field(default_factory=BrowserAssistLocatorRecipe)
 
@@ -221,9 +236,25 @@ class BrowserAssistActResponse(BaseModel):
     action: BrowserAssistActionKind
     actionability: BrowserAssistActionability | None = None
     verified: bool
+    verificationStatus: BrowserAssistVerificationStatus = "not_requested"
     retryDisposition: RetryDisposition = RetryDisposition.FAIL_FAST
     failureReason: str | None = None
     observation: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_verification_status(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        payload = dict(raw)
+        observation = payload.get("observation")
+        skipped = isinstance(observation, dict) and observation.get("verificationSkipped") is True
+        if skipped:
+            payload["verified"] = False
+            payload["verificationStatus"] = "not_requested"
+        elif not payload.get("verificationStatus"):
+            payload["verificationStatus"] = "passed" if payload.get("verified") is True else "failed"
+        return payload
 
 
 class BrowserAssistStatusResponse(BaseModel):
@@ -243,6 +274,8 @@ class BrowserAssistStatusResponse(BaseModel):
     currentFrameId: int | None = None
     currentWindowId: int | None = None
     currentDocumentEpoch: int | None = None
+    currentDocumentId: str | None = None
+    currentPageNonce: str | None = None
 
 
 class BrowserAssistEnvelope(BaseModel):

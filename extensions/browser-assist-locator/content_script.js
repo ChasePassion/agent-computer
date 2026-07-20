@@ -18,6 +18,8 @@
           pageUrl: window.location.href,
           pageTitle: document.title,
           documentEpoch: globalThis.BrowserAssistLocator.getDocumentEpoch(),
+          documentId: globalThis.BrowserAssistLocator.getDocumentId(),
+          pageNonce: globalThis.BrowserAssistLocator.getPageNonce(),
           pageState: globalThis.BrowserAssistLocator.getPageState()
         });
         return;

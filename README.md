@@ -2,6 +2,62 @@
 
 一个给 Codex 直接调用的 Windows 桌面原子工具集。
 
+## Agent 性能与准确度主链
+
+Agent 新接入时按以下优先级选择执行后端：
+
+1. 网页优先用 Browser Assist 的 `locate -> observe -> act`。
+2. Windows 原生控件优先用 UIA 的 `locate -> observe -> act`。
+3. 只有前两者不适用时，才使用物理像素坐标动作。
+
+高频调用推荐启动常驻 stdio MCP：
+
+```powershell
+.\.conda\Scripts\agent-computer-mcp.exe
+```
+
+如果宿主不支持 MCP，可启动常驻 JSONL 管道；每行发送一个请求，避免为每个动作重复启动 Python：
+
+```powershell
+.\.conda\Scripts\agent-computer-pipe.exe
+```
+
+```json
+{"id":1,"method":"POST","path":"/actions/act-and-observe","payload":{"action":{"kind":"press","key":"enter"},"verify":{"kind":"fresh_frame"}}}
+```
+
+单次 CLI 仍然兼容，但 MCP / JSONL 管道是连续 Agent 操作的低延迟入口。客户端热路径只发送业务请求；仅在连接失败时启动 daemon。对于动作已经发出、但响应读取超时的情况，客户端不会自动重放动作，避免重复点击或重复提交。
+
+桌面坐标动作应优先使用事务接口：
+
+```text
+POST /actions/act-and-observe
+POST /actions/batch-act-and-observe
+```
+
+事务会在同一执行锁内完成“校验前置条件 -> 执行动作 -> 强制采集新帧”，并返回 `pre_frame_seq`、`post_frame`、三态 `verification.status` 和分段耗时。可用前置条件包括：
+
+- `expected_frame_seq`
+- `expected_screen_digest`
+- `max_frame_age_ms`
+- `expected_window_handle`
+- `expected_window_bounds`
+- `expected_layout_version`
+
+`verification.status` 和 Browser Assist / UIA 的 `verificationStatus` 都采用 `passed / failed / not_requested`，没有请求校验时绝不报告为已验证。
+
+动作类请求遵循“不对未知结果自动重试”：Browser Assist 动作响应超时，或桌面动作已经派发但事后截图失败时，会返回 `retryDisposition=fail_fast` 及 `outcome` 详情。定位/观察这类只读请求超时仍可安全重试。
+
+可观测性入口：
+
+```text
+GET /system/metrics
+GET /system/display-layout
+logs/agent-computer.log
+```
+
+日志只记录动作种类、阶段耗时、帧序号和错误分类，不记录剪贴板文本、输入内容、页面正文或认证令牌。
+
 ## 0. Agent First Quickstart
 
 当前推荐链路：
@@ -238,7 +294,8 @@ chrome://extensions/
 1. 回到 `chrome://extensions/`
 2. 确保 `Developer mode` 开启
 3. 点击 `Update`
-4. 再次执行 `.\windows-launcher.ps1 browser-assist-status`
+4. 刷新所有要操作的目标页面，让新版 content script 建立新的文档身份
+5. 再次执行 `.\windows-launcher.ps1 browser-assist-status`
 
 ## 0.2 命令入口
 
@@ -307,14 +364,15 @@ pip install -e .
 用于点击联动时，项目遵循这条硬规则：
 
 1. 截图优先使用整屏
-2. 坐标原点永远是整张屏幕左上角 `(0,0)`
+2. 坐标系是 Windows 虚拟桌面的物理像素；`bounds.left/top` 是当前截图原点，多屏布局中可以是负数，不能固定假设为 `(0,0)`
 3. 网格图使用四边标尺带，不把小字压在内容区里
 4. 细网格线默认每 `50px` 一条
 5. 主网格线每 `100px` 一条，并且只有主网格线会显示坐标标签
 6. 红色竖线标签是该主线的 `x`
 7. 红色横线标签是该主线的 `y`
 8. 未标注的中间 `50px` 细线仍然有效，可用于精确估计点击点
-9. 点击阶段直接使用这套整屏绝对坐标，不再做额外换算
+9. 点击阶段直接使用网格标签的虚拟桌面绝对坐标，不要再按图片缩放比例自行换算
+10. daemon 在坐标动作前校验 Per-Monitor DPI V2、显示布局版本、前台窗口与目标点；布局或窗口漂移会返回 `409 reacquire_target`
 
 ## 3. 原子工具
 
@@ -405,6 +463,7 @@ agent-computer capture-preview --output .\artifacts\preview.jpg
 
 ```powershell
 agent-computer capture --target primary-screen --format png
+agent-computer capture --target virtual-screen --format jpeg --jpeg-quality 75
 agent-computer capture --target active-window --format jpeg --jpeg-quality 70
 agent-computer capture --window-title "Windows PowerShell" --grid
 ```
@@ -414,6 +473,7 @@ agent-computer capture --window-title "Windows PowerShell" --grid
 - `capture-grid`：整屏、高质量 JPEG、带绝对坐标网格
 - `capture-preview`：整屏、压缩 JPEG、无网格
 - `capture`：通用截图入口，可指定目标窗口、格式和网格
+- `virtual-screen`：覆盖全部显示器并保留负坐标；后台 Observation 默认使用此目标
 - 网格绘制使用四边标尺带，默认细线 `50px`，主线 `100px`
 - 返回坐标始终是屏幕绝对坐标
 
@@ -553,7 +613,7 @@ agent-computer hotkey ctrl shift s
 
 - `agent-computer-daemon` 是核心常驻进程
 - `agent-computer` 是正式 CLI 入口
-- `.\windows-launcher.ps1` 只负责定位 Windows 本地环境、确保 daemon ready，并把命令转发给正式 CLI
+- `.\windows-launcher.ps1` 只负责定位 Windows 本地环境并把命令转发给正式 CLI；CLI 在首次连接失败时按需启动 daemon
 
 也就是说，`.\windows-launcher.ps1` 不再维护第二套命令定义或参数默认值。
 
@@ -603,6 +663,8 @@ manifest 位于：
 - Human 通过 `/live` 内部切换 `preview` / `grid`
 - Model 默认看 `latest.jpg?mode=grid`
 - `latest.json?mode=grid` 用于 freshness / frame meta
+- `latest.json` 返回的 `image_url` 带同一个 `frame_seq`；服务端从短期不可变帧缓存读取，避免元数据与图片跨帧
+- 可用 `latest.json?mode=grid&after_seq=<N>&timeout_ms=<MS>` 等待严格大于 `N` 的新帧
 - `latest.json?mode=grid` 中的 `mouse_position` 与当前 frame 对齐
 - `/observation/mouse.json` 用于读取当前鼠标即时坐标
 - observation URL 是默认且必须优先的观察入口
@@ -709,7 +771,8 @@ Browser Assist 的输出边界：
 - `locate` 返回 `context / page / viewport / browser / matches`
 - `matches[*]` 返回稳定 `nodeRef`、显式 `actionability` gate 和 `clickablePoint`
 - `observe` 返回目标当前存在性、文本、选中态与 actionability
-- `act` 返回 `verified / retryDisposition / failureReason / observation`
+- `act` 返回 `verified / verificationStatus / retryDisposition / failureReason / observation`
+- `nodeRef` 同时绑定 `tabSessionId / documentEpoch / documentId / pageNonce`；跨导航、刷新或文档重建后必须重新定位
 - Browser Assist 主链现在不再依赖 `mapped.screenCandidates` 或桌面坐标点击
 
 推荐浏览器操作链路：
@@ -735,3 +798,33 @@ Browser Assist 的输出边界：
 .\scripts\test_browser_assist_roundtrip.ps1
 .\scripts\test_browser_assist_roundtrip.ps1 -RequestFile .\docs\examples\browser-assist-request.json
 ```
+
+## 8. Windows UI Automation
+
+原生应用优先使用 UIA，避免标题子串和屏幕坐标带来的歧义：
+
+```text
+POST /uia/locate
+POST /uia/observe
+POST /uia/act
+```
+
+定位示例：
+
+```json
+{
+  "window_handle": 101,
+  "locator": {
+    "automation_id": "save-button",
+    "control_type": "button",
+    "enabled": true,
+    "offscreen": false
+  },
+  "scope": "descendants",
+  "max_results": 5
+}
+```
+
+返回的 `nodeRef` 包含 `backend: uia`、`runtime_id` 和 `window_handle`。动作支持 `invoke / set_value / toggle / select / expand / collapse / focus`；执行前会校验窗口与显示布局，执行后可按属性做三态验证。密码控件的值不会返回。
+
+只有 UIA 控件模式不可用时，才回退到 Observation 网格和坐标动作。

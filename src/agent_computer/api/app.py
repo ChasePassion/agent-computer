@@ -13,6 +13,8 @@ from agent_computer.api.routes_live_control import router as live_control_router
 from agent_computer.api.routes_navigation import router as navigation_router
 from agent_computer.api.routes_observation import router as observation_router
 from agent_computer.api.routes_system import router as system_router
+from agent_computer.api.routes_transactions import router as transactions_router
+from agent_computer.api.routes_uia import router as uia_router
 from agent_computer.runtime import ensure_runtime_dirs
 from agent_computer.services.registry import create_service_registry
 
@@ -24,9 +26,11 @@ def create_app(*, host: str, port: int) -> FastAPI:
         app.state.registry = create_service_registry(host=host, port=port)
         app.state.registry.observation.start()
         app.state.registry.codex_session_watcher.start()
-        yield
-        app.state.registry.codex_session_watcher.stop()
-        app.state.registry.observation.stop()
+        try:
+            yield
+        finally:
+            app.state.registry.codex_session_watcher.stop()
+            app.state.registry.observation.stop()
 
     app = FastAPI(title="Agent Computer Daemon", version="0.1.0", lifespan=lifespan)
     app.state.host = host
@@ -36,6 +40,8 @@ def create_app(*, host: str, port: int) -> FastAPI:
     app.include_router(capture_router)
     app.include_router(navigation_router)
     app.include_router(actions_router)
+    app.include_router(transactions_router)
+    app.include_router(uia_router)
     app.include_router(observation_router)
     app.include_router(live_control_router)
     app.include_router(browser_assist_router)

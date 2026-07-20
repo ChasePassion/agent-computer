@@ -4,7 +4,7 @@ import argparse
 
 import uvicorn
 
-from agent_computer.api import create_app
+from agent_computer.display import ensure_per_monitor_v2_dpi_awareness
 from agent_computer.runtime import DEFAULT_BIND_HOST, DEFAULT_PORT
 
 
@@ -18,6 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    ensure_per_monitor_v2_dpi_awareness()
+    from agent_computer.api import create_app
+
     app = create_app(host=args.host, port=args.port)
     config = uvicorn.Config(app, host=args.host, port=args.port, log_level=args.log_level)
     server = uvicorn.Server(config)

@@ -7,26 +7,7 @@ from typing import Any
 
 import httpx
 
-from agent_computer.actions import mouse_position
-from agent_computer.capture import zoom
 from agent_computer.client import DaemonClient
-from agent_computer.daemon import main as daemon_main
-from agent_computer.models.browser_assist import BrowserAssistActRequest, BrowserAssistLocateRequest, BrowserAssistObserveRequest
-from agent_computer.models.requests import (
-    BrowserOpenUrlRequest,
-    CaptureGridRequest,
-    CapturePreviewRequest,
-    CaptureRequest,
-    ClickRequest,
-    FocusRequest,
-    HotkeyRequest,
-    MaximizeRequest,
-    MoveRequest,
-    PasteRequest,
-    PressRequest,
-    ScrollRequest,
-    TypeRequest,
-)
 from agent_computer.runtime import (
     DEFAULT_BIND_HOST,
     observation_token_path,
@@ -93,30 +74,26 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
     command = args.command
 
     if command == "capture":
-        payload = CaptureRequest(
-            output=args.output,
-            target=args.target,
-            window_title=args.window_title,
-            window_exact=args.window_exact,
-            grid=args.grid,
-            grid_size=args.grid_size,
-            format=args.format,
-            jpeg_quality=args.jpeg_quality,
-        ).model_dump()
+        payload = {
+            "output": args.output,
+            "target": args.target,
+            "window_title": args.window_title,
+            "window_exact": args.window_exact,
+            "grid": args.grid,
+            "grid_size": args.grid_size,
+            "format": args.format,
+            "jpeg_quality": args.jpeg_quality,
+        }
         _print_json(_call(client, method="POST", path="/capture", payload=payload))
         return
 
     if command == "capture-preview":
-        payload = CapturePreviewRequest(output=args.output, jpeg_quality=args.jpeg_quality).model_dump()
+        payload = {"output": args.output, "jpeg_quality": args.jpeg_quality}
         _print_json(_call(client, method="POST", path="/capture/preview", payload=payload))
         return
 
     if command == "capture-grid":
-        payload = CaptureGridRequest(
-            output=args.output,
-            grid_size=args.grid_size,
-            jpeg_quality=args.jpeg_quality,
-        ).model_dump()
+        payload = {"output": args.output, "grid_size": args.grid_size, "jpeg_quality": args.jpeg_quality}
         _print_json(_call(client, method="POST", path="/capture/grid", payload=payload))
         return
 
@@ -125,42 +102,42 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         return
 
     if command == "focus":
-        payload = FocusRequest(title=args.title, exact=args.exact).model_dump()
+        payload = {"title": args.title, "exact": args.exact}
         _print_json(_call(client, method="POST", path="/navigation/focus", payload=payload))
         return
 
     if command == "maximize":
-        payload = MaximizeRequest(title=args.title, exact=args.exact).model_dump()
+        payload = {"title": args.title, "exact": args.exact}
         _print_json(_call(client, method="POST", path="/navigation/maximize", payload=payload))
         return
 
     if command == "move":
-        payload = MoveRequest(x=args.x, y=args.y, duration=args.duration).model_dump()
+        payload = {"x": args.x, "y": args.y, "duration": args.duration}
         _print_json(_call(client, method="POST", path="/actions/move", payload=payload))
         return
 
     if command == "click":
-        payload = ClickRequest(x=args.x, y=args.y, button=args.button, double=args.double).model_dump()
+        payload = {"x": args.x, "y": args.y, "button": args.button, "double": args.double}
         _print_json(_call(client, method="POST", path="/actions/click", payload=payload))
         return
 
     if command == "scroll":
-        payload = ScrollRequest(amount=args.amount).model_dump()
+        payload = {"amount": args.amount}
         _print_json(_call(client, method="POST", path="/actions/scroll", payload=payload))
         return
 
     if command == "type":
-        payload = TypeRequest(text=args.text, interval=args.interval).model_dump()
+        payload = {"text": args.text, "interval": args.interval}
         _print_json(_call(client, method="POST", path="/actions/type", payload=payload))
         return
 
     if command == "paste":
-        payload = PasteRequest(text=args.text, restore_clipboard=args.restore_clipboard).model_dump()
+        payload = {"text": args.text, "restore_clipboard": args.restore_clipboard}
         _print_json(_call(client, method="POST", path="/actions/paste", payload=payload))
         return
 
     if command == "browser-open-url":
-        payload = BrowserOpenUrlRequest(url=args.url, restore_clipboard=args.restore_clipboard).model_dump()
+        payload = {"url": args.url, "restore_clipboard": args.restore_clipboard}
         _print_json(_call(client, method="POST", path="/navigation/browser-open-url", payload=payload))
         return
 
@@ -188,7 +165,7 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         raw_input = args.input_json
         if args.input_file:
             raw_input = Path(args.input_file).read_text(encoding="utf-8")
-        payload = BrowserAssistLocateRequest.model_validate(json.loads(raw_input)).model_dump(mode="json")
+        payload = json.loads(raw_input)
         _print_json(_call(client, method="POST", path="/browser-assist/locate", payload=payload))
         return
 
@@ -196,7 +173,7 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         raw_input = args.input_json
         if args.input_file:
             raw_input = Path(args.input_file).read_text(encoding="utf-8")
-        payload = BrowserAssistObserveRequest.model_validate(json.loads(raw_input)).model_dump(mode="json")
+        payload = json.loads(raw_input)
         _print_json(_call(client, method="POST", path="/browser-assist/observe", payload=payload))
         return
 
@@ -204,17 +181,17 @@ def _handle_remote(args: argparse.Namespace, client: DaemonClient) -> None:
         raw_input = args.input_json
         if args.input_file:
             raw_input = Path(args.input_file).read_text(encoding="utf-8")
-        payload = BrowserAssistActRequest.model_validate(json.loads(raw_input)).model_dump(mode="json")
+        payload = json.loads(raw_input)
         _print_json(_call(client, method="POST", path="/browser-assist/act", payload=payload))
         return
 
     if command == "press":
-        payload = PressRequest(key=args.key).model_dump()
+        payload = {"key": args.key}
         _print_json(_call(client, method="POST", path="/actions/press", payload=payload))
         return
 
     if command == "hotkey":
-        payload = HotkeyRequest(keys=args.keys).model_dump()
+        payload = {"keys": args.keys}
         _print_json(_call(client, method="POST", path="/actions/hotkey", payload=payload))
         return
 
@@ -225,6 +202,8 @@ def _handle_daemon(args: argparse.Namespace) -> None:
     client = DaemonClient(host=args.host, bind_host=getattr(args, "bind_host", DEFAULT_BIND_HOST), port=args.port)
 
     if args.daemon_command == "run":
+        from agent_computer.daemon import main as daemon_main
+
         daemon_argv = ["--host", args.bind_host, "--port", str(args.port), "--log-level", args.log_level]
         daemon_main(daemon_argv)
         return
@@ -253,6 +232,8 @@ def _handle_daemon(args: argparse.Namespace) -> None:
 
 def _handle_local(args: argparse.Namespace) -> None:
     if args.command == "zoom":
+        from agent_computer.capture import zoom
+
         result = zoom(
             args.input,
             args.output,
@@ -288,6 +269,8 @@ def _handle_observation(args: argparse.Namespace) -> None:
         return
 
     if args.observation_command == "mouse":
+        from agent_computer.actions import mouse_position
+
         x, y = mouse_position()
         payload = {
             "x": x,
@@ -311,9 +294,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    subparsers.add_parser("mcp", help="Run the persistent Agent Computer MCP server over stdio.")
+    subparsers.add_parser("pipe", help="Run the persistent newline-delimited JSON request server over stdio.")
+
     common_capture = {
         "target": {
-            "choices": ["active-window", "primary-screen"],
+            "choices": ["active-window", "primary-screen", "virtual-screen"],
             "default": "active-window",
             "help": "What to capture.",
         },
@@ -410,7 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     type_parser = subparsers.add_parser("type", help="Type text into the active window.")
     type_parser.add_argument("--text", required=True, help="Text to type.")
-    type_parser.add_argument("--interval", default=0.02, type=float, help="Delay between keystrokes.")
+    type_parser.add_argument("--interval", default=0.0, type=float, help="Delay between keystrokes.")
 
     paste_parser = subparsers.add_parser(
         "paste",
@@ -503,6 +489,18 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.command == "mcp":
+        from agent_computer.mcp_server import main as mcp_main
+
+        mcp_main()
+        return
+
+    if args.command == "pipe":
+        from agent_computer.stdio_server import main as pipe_main
+
+        pipe_main()
+        return
+
     if args.command == "daemon":
         _handle_daemon(args)
         return
@@ -515,16 +513,16 @@ def main() -> None:
         _handle_local(args)
         return
 
-    client = DaemonClient()
-    try:
-        _handle_remote(args, client)
-    except httpx.HTTPStatusError as exc:
+    with DaemonClient() as client:
         try:
-            payload = exc.response.json()
-        except Exception:
-            payload = {"error": {"type": "HTTPStatusError", "message": str(exc)}}
-        _print_json(payload)
-        raise SystemExit(1) from exc
+            _handle_remote(args, client)
+        except httpx.HTTPStatusError as exc:
+            try:
+                payload = exc.response.json()
+            except Exception:
+                payload = {"error": {"type": "HTTPStatusError", "message": str(exc)}}
+            _print_json(payload)
+            raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

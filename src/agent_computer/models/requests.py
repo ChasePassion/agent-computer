@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class CaptureRequest(BaseModel):
     output: str | None = None
-    target: Literal["active-window", "primary-screen"] = "active-window"
+    target: Literal["active-window", "primary-screen", "virtual-screen"] = "active-window"
     window_title: str | None = None
     window_exact: bool = False
     grid: bool = False
@@ -55,7 +55,7 @@ class ScrollRequest(BaseModel):
 
 class TypeRequest(BaseModel):
     text: str
-    interval: float = Field(default=0.02, ge=0.0)
+    interval: float = Field(default=0.0, ge=0.0)
 
 
 class PasteRequest(BaseModel):

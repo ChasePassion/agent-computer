@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from agent_computer.actions import mouse_position
@@ -64,12 +65,14 @@ def _normalize_grid_only_mode(value: str | None) -> Literal["grid"]:
 
 def _require_token(
     token: str | None = Query(default=None),
+    token_header: str | None = Header(default=None, alias="X-Agent-Computer-Token"),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> str:
     expected = registry.observation.token()
-    if token != expected:
+    provided = token or token_header
+    if provided != expected:
         raise HTTPException(status_code=401, detail="Invalid observation token.")
-    return token
+    return provided
 
 
 @router.get("/live", response_class=HTMLResponse)
@@ -154,11 +157,18 @@ def latest_image(
     request: Request,
     _: str = Depends(_require_token),
     mode: str | None = Query(default=None),
+    frame_seq: int | None = Query(default=None, ge=0),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> FileResponse:
     normalized_mode = _normalize_grid_only_mode(mode)
     try:
-        image_path = registry.observation.latest_image_path(normalized_mode)
+        image_path = (
+            registry.observation.latest_image_path(normalized_mode)
+            if frame_seq is None
+            else registry.observation.image_path_for_frame(normalized_mode, frame_seq)
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=410, detail=f"Observation frame {frame_seq} is no longer retained.") from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(
@@ -173,11 +183,25 @@ def latest_json(
     request: Request,
     token: str = Depends(_require_token),
     mode: str | None = Query(default=None),
+    after_seq: int | None = Query(default=None, ge=0),
+    timeout_ms: int = Query(default=2000, ge=0, le=15000),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> JSONResponse:
     normalized_mode = _normalize_grid_only_mode(mode)
-    payload = registry.observation.latest(normalized_mode)
+    if after_seq is None:
+        payload = registry.observation.latest(normalized_mode)
+    else:
+        payload = registry.observation.wait_for_frame(
+            normalized_mode,
+            after_seq=after_seq,
+            timeout_sec=timeout_ms / 1000.0,
+        )
     if payload is None:
+        if after_seq is not None:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Timed out waiting for observation frame newer than sequence {after_seq}.",
+            )
         raise HTTPException(status_code=503, detail=f"No latest observation frame available for mode: {normalized_mode}")
     response_payload = dict(payload)
     response_payload["image_url"] = _relative_url_for(
@@ -185,6 +209,7 @@ def latest_json(
         route_name="observation_latest_image",
         token=token,
         mode=normalized_mode,
+        frame_seq=int(response_payload["frame_seq"]),
     )
     return JSONResponse(content=response_payload, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
@@ -229,9 +254,13 @@ def _relative_url_for(
     route_name: str,
     token: str,
     mode: str,
+    frame_seq: int | None = None,
 ) -> str:
     route_url = request.url_for(route_name)
-    return f"{route_url.path}?token={token}&mode={mode}"
+    query: dict[str, object] = {"token": token, "mode": mode}
+    if frame_seq is not None:
+        query["frame_seq"] = frame_seq
+    return f"{route_url.path}?{urlencode(query)}"
 
 
 def _build_live_output_payload(registry: ServiceRegistry) -> dict[str, Any]:
